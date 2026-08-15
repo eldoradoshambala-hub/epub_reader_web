@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS = {
   textColor: '#1a1a1a',
   mangaFit: 'contain',
   mangaBackground: '#1c1c1c',
+  pageAnimation: false,      // sliding page turns; off by default on a phone
 };
 
 const XHTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -69,6 +70,10 @@ export class Reader {
     this.pageH = 0;
     this.advance = 0;
 
+    this.lastTouchAt = 0;
+    this.lastStageW = 0;
+    this.lastStageH = 0;
+
     this.currentUrl = '';
     this.loadToken = 0;
     this.loading = false;
@@ -78,6 +83,11 @@ export class Reader {
   }
 
   // -- helpers ------------------------------------------------------------
+
+  /** True while the synthetic click that follows a tap is still to come. */
+  afterTouch() {
+    return Date.now() - this.lastTouchAt < 900;
+  }
 
   paneDoc(el) {
     try {
@@ -430,6 +440,7 @@ export class Reader {
 
     doc.documentElement.classList.toggle('rd-v', this.vertical);
     doc.documentElement.classList.toggle('rd-h', !this.vertical);
+    doc.documentElement.classList.toggle('rd-anim', !!this.settings.pageAnimation);
   }
 
   injectAll() {
@@ -458,9 +469,30 @@ export class Reader {
     return Promise.all(waits);
   }
 
+  /* Navigating a pane, defensively.
+
+     location.replace is preferred because it keeps the iframe out of the
+     history, so a back swipe leaves the book rather than walking through the
+     chapters. But on iOS that navigation to a blob URL sometimes never fires
+     load, and a pane that never finishes loading stays invisible -- a white
+     page. So: try replace, retry once through src, and give up waiting after
+     a few seconds and lay out whatever arrived. */
   _loadPane(el, url) {
     return new Promise((resolve) => {
-      el.onload = () => resolve(this.paneDoc(el));
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(retry);
+        clearTimeout(giveUp);
+        el.onload = null;
+        resolve(this.paneDoc(el));
+      };
+      el.onload = finish;
+      const retry = setTimeout(() => {
+        if (!settled) el.src = url;
+      }, 2500);
+      const giveUp = setTimeout(finish, 8000);
       try {
         el.contentWindow.location.replace(url);
       } catch {
@@ -490,6 +522,17 @@ export class Reader {
     this.frames[1].hidden = !this.spread;
     this.computeGeometry();
 
+    // Whatever happens below, the panes must not be left invisible.
+    clearTimeout(this._loadingGuard);
+    this._loadingGuard = setTimeout(() => {
+      if (this.loading && token === this.loadToken) {
+        this.loading = false;
+        for (const el of this.frames) el.classList.remove('loading');
+        this.relayout(false);
+        this.report();
+      }
+    }, 12000);
+
     const waits = [this._loadPane(this.frames[0], url)];
     if (this.spread) waits.push(this._loadPane(this.frames[1], url));
     const docs = await Promise.all(waits);
@@ -514,6 +557,7 @@ export class Reader {
     await Promise.all(docs.filter(Boolean).map((doc) => Reader.assetsReady(doc)));
     if (token !== this.loadToken) return;
 
+    clearTimeout(this._loadingGuard);
     this.loading = false;
     this.relayout(false);
     this._applyPending(lead);
@@ -751,6 +795,10 @@ export class Reader {
     }, { passive: true });
 
     target.addEventListener('touchend', (e) => {
+      // iOS sends a click of its own after a tap. Both would be handled, and
+      // the second undoes the first -- which is what made the bars flash and
+      // vanish, and made the result depend on how long the tap lasted.
+      this.lastTouchAt = Date.now();
       const touch = e.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
@@ -777,6 +825,7 @@ export class Reader {
       if (anchor) { e.preventDefault(); }
       // Pointer devices only: a touch already produced a tap above.
       if (e.pointerType === 'touch' || e.detail === 0) return;
+      if (this.afterTouch()) return;
       e.preventDefault();
       this._handleTap(e.clientX, e.target, paneEl);
     }, true);
@@ -805,6 +854,7 @@ export class Reader {
     this._attachTouch(this.stage, null);
     this.stage.addEventListener('click', (e) => {
       if (e.pointerType === 'touch' || e.detail === 0) return;
+      if (this.afterTouch()) return;
       if (e.target.closest && e.target.closest('.fixed-layer')) {
         this._handleTap(e.clientX, e.target, null);
       }
@@ -815,8 +865,17 @@ export class Reader {
     const onResize = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
+        // Safari fires resize whenever its toolbars slide, many times a
+        // second, with the stage the same size throughout. Re-paginating on
+        // each one meant the chapter was permanently being rebuilt, which is
+        // what the flicker and the blank pages were.
+        const w = this.stage.clientWidth;
+        const h = this.stage.clientHeight;
+        if (w === this.lastStageW && h === this.lastStageH) return;
+        this.lastStageW = w;
+        this.lastStageH = h;
         if (this.mode === 'reflow') this.relayoutPanes(true);
-      }, 120);
+      }, 200);
     };
     window.addEventListener('resize', onResize);
     // iOS fires this on rotation before the resize settles.

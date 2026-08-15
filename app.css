@@ -67,7 +67,14 @@ button {
 
 #reader {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  /* svh, not dvh: the small viewport is the one that stays put. dvh grows and
+     shrinks as Safari's toolbars slide, and every change would re-paginate
+     the chapter under the reader's feet. */
+  height: 100svh;
   background: var(--page-bg);
 }
 
@@ -127,9 +134,10 @@ button {
   left: 0;
   right: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--chrome-bg) 94%, transparent);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  /* Opaque rather than blurred: a backdrop filter over a live iframe is one
+     of the more reliable ways to make iOS flicker, and it buys very little
+     over a bar that simply covers what is behind it. */
+  background: var(--chrome-bg);
   transition: transform 0.22s ease, opacity 0.22s ease;
 }
 
@@ -415,6 +423,20 @@ button {
   font-weight: 600;
   color: var(--chrome-dim);
   letter-spacing: 0.06em;
+}
+
+.diagnosis {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--chrome-fg) 7%, transparent);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .hint {

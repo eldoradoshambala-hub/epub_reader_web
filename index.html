@@ -247,9 +247,32 @@
       </div>
     </div>
 
+    <p class="section-title">動作</p>
+    <div class="field">
+      <label for="set-pageAnimation">ページ送り</label>
+      <div class="control">
+        <select id="set-pageAnimation">
+          <option value="">すぐ切り替える（推奨）</option>
+          <option value="on">スライドさせる</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint">
+      スライドさせると、iPhone では表示が乱れたり白紙になることがあります。
+      おかしい時は「すぐ切り替える」に戻して下さい。
+    </p>
+
     <p class="section-title">この端末</p>
     <p class="hint" id="storage-note"></p>
     <p class="hint" id="version-note"></p>
+    <div class="field">
+      <label>診断</label>
+      <div class="control">
+        <button class="icon-button" id="btn-diagnose">調べる</button>
+        <button class="icon-button" id="btn-copy-diagnosis" hidden>コピー</button>
+      </div>
+    </div>
+    <pre class="diagnosis" id="diagnosis" hidden></pre>
   </div>
 </section>
 

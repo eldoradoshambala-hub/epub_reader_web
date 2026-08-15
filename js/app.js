@@ -507,6 +507,12 @@ class App {
     el('bg-input').addEventListener('change', (e) => this.setBackgroundImage(e.target.files[0]));
     el('btn-clear-bg').addEventListener('click', () => this.setBackgroundImage(null));
 
+    el('btn-diagnose').addEventListener('click', () => this.diagnose());
+    el('btn-copy-diagnosis').addEventListener('click', () => {
+      navigator.clipboard.writeText(el('diagnosis').textContent).then(
+        () => toast('コピーしました'), () => toast('コピーできませんでした'));
+    });
+
     el('version-note').textContent = `縦書きリーダー ${VERSION}`;
     this.syncSettingsForm();
     this.syncSpreadButtons();
@@ -516,7 +522,8 @@ class App {
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       const input = el(`set-${key}`);
       if (!input) continue;
-      input.value = this.settings[key];
+      const value = this.settings[key];
+      input.value = value === true ? 'on' : value === false ? '' : value;
       const readout = document.querySelector(`.value[data-for="set-${key}"]`);
       if (readout) readout.textContent = formatSetting(key, this.settings[key]);
     }
@@ -574,6 +581,35 @@ class App {
     reader.style.backgroundSize = 'cover';
     reader.style.backgroundPosition = 'center';
     el('bg-state').textContent = 'あり';
+  }
+
+  /* What the reader thinks is going on, in one block of text that can be read
+     off the phone. Guessing at a rendering fault from a description costs a
+     round trip each time; this costs one. */
+  diagnose() {
+    const rd = this.reader;
+    const lead = rd.frames[0];
+    const doc = rd.paneDoc(lead);
+    const book = this.view.book;
+    const lines = [
+      `版 ${VERSION}`,
+      `画面 ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}`,
+      `visualViewport ${visualViewport ? Math.round(visualViewport.width) + 'x' + Math.round(visualViewport.height) : '-'}`,
+      `stage ${rd.stage.clientWidth}x${rd.stage.clientHeight}`,
+      `pane ${lead.clientWidth}x${lead.clientHeight} clip=${lead.style.clipPath || 'なし'}`,
+      `ホーム画面から起動 ${navigator.standalone ? 'はい' : 'いいえ'}`,
+      `mode=${rd.mode} vertical=${rd.vertical} spread=${rd.spread} loading=${rd.loading}`,
+      `page ${rd.pageIndex + 1}/${rd.pageCount} extent=${Math.round(rd.contentExtent)} pageW=${Math.round(rd.pageW)}`,
+      `pane文書 ${doc ? 'あり' : 'なし'}${doc && doc.body ? ' body=' + Math.round(doc.body.getBoundingClientRect().width) + 'px' : ''}`,
+      `本 ${book ? book.metadata.title.slice(0, 30) : 'なし'}`,
+      book ? `spine ${this.view.spineIndex + 1}/${book.spine.length} fixed=${book.isFixedLayout} rtl=${book.isRtl}` : '',
+      `設定 size=${this.settings.fontSize} line=${this.settings.lineHeight} 余白=${this.settings.marginTop}/${this.settings.marginBottom}/${this.settings.marginLeft}/${this.settings.marginRight}`,
+      `ページ送り ${this.settings.pageAnimation ? 'スライド' : '即時'} / 表示 ${this.settings.spreadMode}`,
+      `SW ${navigator.serviceWorker && navigator.serviceWorker.controller ? '有効' : 'なし'}`,
+    ].filter(Boolean);
+    el('diagnosis').textContent = lines.join('\n');
+    el('diagnosis').hidden = false;
+    el('btn-copy-diagnosis').hidden = false;
   }
 
   async refreshStorageNote() {

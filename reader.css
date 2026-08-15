@@ -45,9 +45,18 @@ body {
   letter-spacing: var(--rd-letter-spacing) !important;
   color: var(--rd-color) !important;
   -webkit-text-stroke: var(--rd-stroke) currentColor;
-  transition: transform 0.14s ease-out;
-  will-change: transform;
+  /* No will-change here. A chapter laid out vertically is one strip several
+     thousand pixels wide; promising the compositor it will move promoted the
+     whole strip to a layer, and iOS cannot hold a texture that size -- it
+     gives up and paints nothing, which is the white page. Without the hint
+     Safari paints it in tiles, on demand.
+
+     The slide is opt-in for the same reason: an animated transform promotes
+     the strip for the duration of the animation. */
 }
+
+/* Sliding page turns, only when asked for. */
+html.rd-anim > body { transition: transform 0.14s ease-out; }
 
 /* Vertical: shrink-to-fit box anchored at the right edge, growing leftward as
    lines accumulate. Turning a page slides it back to the right. */
