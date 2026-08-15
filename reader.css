@@ -1,0 +1,206 @@
+/* Injected into each chapter document, after the book's own stylesheets, so
+   these rules win on equal specificity. Everything the user can change comes
+   in as a custom property set by reader.js.
+
+   The key trick for clean page breaks: --rd-advance is an absolute pixel
+   line-height. Because a px line-height inherits as a fixed value rather than
+   being recomputed per font size, every normal line occupies exactly the same
+   advance, and headings are pinned to whole multiples of it. Page width is
+   then snapped to a whole number of advances, so a line is never sliced in
+   half at a page boundary. */
+
+html {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: transparent !important;
+  font-size: var(--rd-font-size);
+  color: var(--rd-color);
+  /* Japanese line breaking: strict kinsoku, as used in print. */
+  line-break: strict;
+  word-break: normal;
+  overflow-wrap: break-word;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.rd-v { writing-mode: vertical-rl !important; -webkit-writing-mode: vertical-rl !important; }
+html.rd-h { writing-mode: horizontal-tb !important; -webkit-writing-mode: horizontal-tb !important; }
+
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  position: absolute;
+  top: 0;
+  font-family: var(--rd-font-family) !important;
+  font-weight: var(--rd-font-weight) !important;
+  font-size: 1rem !important;
+  line-height: var(--rd-advance) !important;
+  letter-spacing: var(--rd-letter-spacing) !important;
+  color: var(--rd-color) !important;
+  -webkit-text-stroke: var(--rd-stroke) currentColor;
+  transition: transform 0.14s ease-out;
+  will-change: transform;
+}
+
+/* Vertical: shrink-to-fit box anchored at the right edge, growing leftward as
+   lines accumulate. Turning a page slides it back to the right. */
+html.rd-v > body {
+  right: 0;
+  height: var(--rd-page-h);
+}
+
+/* A ruby annotation is set to the right of the characters it belongs to, and
+   on the very first column there is nothing to the right but the edge of the
+   page, so it overhangs and gets trimmed. Everywhere else this is already
+   handled -- an annotation that reaches into the previous column welds the two
+   lines together when the page breaks are worked out, so such a line never
+   begins a page. Only the start of the document needs the room made for it,
+   and it has to be made inside the body: the body's own right edge is the
+   origin every page offset is measured from, so moving it would move the page
+   breaks with it. */
+html.rd-v > body::before {
+  content: "";
+  display: block;
+  block-size: calc(var(--rd-font-size) * 0.4);
+  inline-size: 0;
+}
+
+/* Horizontal: a single-column multicol box; overflow spills into further
+   columns to the right, which is what we page through. */
+html.rd-h > body {
+  left: 0;
+  width: var(--rd-page-w);
+  height: var(--rd-page-h);
+  column-width: var(--rd-page-w);
+  column-gap: 0;
+  column-fill: auto;
+}
+
+/* -- typography ---------------------------------------------------------- */
+
+/* One font for the whole book: the user picked it, so honour it everywhere. */
+body, body * {
+  font-family: var(--rd-font-family) !important;
+}
+
+/* Neutralise absolute font sizes from the book's own CSS on running text, so
+   the size slider actually does something. Headings keep their scale below. */
+p, div, span, li, dd, dt, td, th, blockquote, section, article, aside, figure,
+figcaption, address, pre, a, em, i, cite, small, sub, sup, q, s, u, mark {
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit !important;
+  color: inherit !important;
+  background: transparent !important;
+}
+
+body, p, div, span, li, dd, dt, td, th, blockquote, section, article, figure {
+  font-weight: var(--rd-font-weight) !important;
+}
+
+/* Emphasis stays heavier than the body, whatever the body weight is. */
+b, strong, .bold {
+  font-weight: var(--rd-bold-weight) !important;
+}
+
+em, i, .em {
+  font-style: normal;
+  font-weight: var(--rd-bold-weight);
+}
+
+/* Headings: sized in rem so they track the size slider, with the line advance
+   pinned to exactly two body advances to keep the page grid intact. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--rd-font-family) !important;
+  font-weight: var(--rd-heading-weight) !important;
+  line-height: var(--rd-heading-advance) !important;
+  letter-spacing: 0.08em;
+  color: inherit !important;
+  background: transparent !important;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+h1 { font-size: 1.5rem !important; margin: 0 0 var(--rd-advance) 0 !important; }
+h2 { font-size: 1.3rem !important; margin: 0 0 var(--rd-advance) 0 !important; }
+h3 { font-size: 1.15rem !important; margin: 0 0 var(--rd-advance) 0 !important; }
+h4, h5, h6 { font-size: 1.05rem !important; margin: 0 0 var(--rd-advance) 0 !important; }
+
+p {
+  margin: 0 !important;
+  orphans: 1;
+  widows: 1;
+}
+
+/* -- ruby (振り仮名) ------------------------------------------------------ */
+
+ruby {
+  ruby-position: over;
+  ruby-align: center;
+  line-height: 1;
+}
+
+rt {
+  font-size: 0.5em !important;
+  line-height: 1 !important;
+  font-weight: inherit !important;
+  letter-spacing: 0 !important;
+  -webkit-text-stroke: 0 !important;
+  text-emphasis: none;
+}
+
+rp { display: none !important; }
+
+/* 縦中横: honour the book's own markup for it. */
+.tcy, [data-tcy], .text-combine {
+  text-combine-upright: all;
+  -webkit-text-combine: horizontal;
+}
+
+/* 圏点 */
+.em-sesame, .sesame {
+  text-emphasis: filled sesame currentColor;
+  text-emphasis-position: over right;
+}
+
+/* -- media --------------------------------------------------------------- */
+
+img, svg, video, canvas {
+  max-width: var(--rd-page-w) !important;
+  max-height: var(--rd-page-h) !important;
+  height: auto;
+  background: transparent !important;
+  break-inside: avoid;
+}
+
+table {
+  max-width: var(--rd-page-w);
+  max-height: var(--rd-page-h);
+  border-collapse: collapse;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid currentColor;
+  opacity: 0.35;
+  margin: var(--rd-advance) 0;
+}
+
+a, a:link, a:visited {
+  color: inherit !important;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.45);
+}
+
+/* Chromium still reserves scrollbar space in some layouts; we page manually. */
+::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+/* Selection is distracting in a reader and interferes with click-to-turn. */
+body { -webkit-user-select: none; user-select: none; }

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>EPUB parser check</title>
+</head>
+<body>
+<pre id="log">waiting…</pre>
+<script type="module">
+import { Epub } from '../js/epub.js';
+
+const log = document.getElementById('log');
+window.__results = null;
+window.__progress = 0;
+
+/* Reduce a parsed book to the same shape the Python side reports, so the two
+   can be compared field by field rather than eyeballed. */
+async function describe(book) {
+  return {
+    title: book.metadata.title,
+    creator: book.metadata.creator,
+    language: book.metadata.language,
+    layout: book.metadata.layout,
+    direction: book.direction,
+    opfDir: book.opfDir,
+    manifest: book.manifest.size,
+    spine: book.spine.length,
+    docs: book.spine.filter((s) => s.mediaType === 'application/xhtml+xml'
+                                || s.mediaType === 'text/html').length,
+    toc: book.toc.length,
+    tocFirst: book.toc.slice(0, 3).map((t) => [t.label, t.href, t.fragment, t.depth]),
+    tocUnresolved: book.toc.filter(
+      (t) => !book.spine.some((s) => s.href === t.href)
+    ).length,
+    vertical: await book.looksVertical(),
+    cover: book.coverHref,
+    spreadSides: book.spine.slice(0, 8).map((s) => s.spreadSide),
+    firstHrefs: book.spine.slice(0, 3).map((s) => s.href),
+  };
+}
+
+async function run() {
+  const books = await (await fetch('books.json')).json();
+  const results = [];
+  for (let i = 0; i < books.length; i++) {
+    const entry = books[i];
+    let row = { name: entry.name };
+    try {
+      const response = await fetch(`book/${i}`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const book = await Epub.open(await response.arrayBuffer(), entry.name);
+      row = Object.assign(row, await describe(book));
+    } catch (err) {
+      row.error = String(err && err.message ? err.message : err);
+    }
+    results.push(row);
+    window.__progress = i + 1;
+    log.textContent = `${i + 1} / ${books.length}`;
+  }
+  window.__results = results;
+  log.textContent = `done: ${results.length}`;
+}
+
+run().catch((err) => {
+  window.__results = [{ error: `harness failed: ${err}` }];
+  log.textContent = `failed: ${err}`;
+});
+</script>
+</body>
+</html>

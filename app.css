@@ -1,0 +1,489 @@
+/* Application chrome. The chapter itself is styled by reader.css, which is
+   injected into the panes; nothing here reaches inside them.
+
+   Built for a phone held in one hand: the controls sit within reach of a
+   thumb, the reading surface never scrolls, and everything clears the notch
+   and the home indicator. */
+
+:root {
+  --page-bg: #f3ede1;
+  --manga-bg: #1c1c1c;
+  --chrome-bg: #f7f5f0;
+  --chrome-fg: #2b2b2b;
+  --chrome-dim: #7b7772;
+  --chrome-line: #d9d4cb;
+  --accent: #2f6f5e;
+  --accent-fg: #ffffff;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chrome-bg: #26252a;
+    --chrome-fg: #ece9e3;
+    --chrome-dim: #9a958d;
+    --chrome-line: #3d3b41;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--page-bg);
+  color: var(--chrome-fg);
+  font-family: -apple-system, "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+body { -webkit-user-select: none; user-select: none; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hidden { display: none !important; }
+
+/* Anything given a display of its own -- .icon-button is inline-flex -- beats
+   the browser's own rule for [hidden], and then hiding an element by setting
+   the property has no effect at all. */
+[hidden] { display: none !important; }
+
+/* -- reading surface ----------------------------------------------------- */
+
+#reader {
+  position: fixed;
+  inset: 0;
+  background: var(--page-bg);
+}
+
+#reader .stage {
+  position: absolute;
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: var(--safe-bottom);
+  left: var(--safe-left);
+}
+
+#reader iframe {
+  position: absolute;
+  display: block;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+#reader iframe.loading { visibility: hidden; }
+#reader iframe[hidden] { display: none; }
+
+.fixed-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  background: var(--manga-bg);
+}
+
+.fixed-layer[hidden] { display: none; }
+.fixed-layer.rtl { flex-direction: row-reverse; }
+
+.fixed-layer img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+
+.fixed-layer.fit-width img { width: 100%; max-width: none; height: auto; }
+.fixed-layer.fit-height img { height: 100%; max-height: none; width: auto; }
+.fixed-layer.twin img { max-width: 50%; }
+.fixed-layer.twin.fit-width img { width: 50%; }
+
+/* -- top and bottom bars, shown on a tap in the middle -------------------- */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--chrome-bg) 94%, transparent);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.bar.top {
+  top: 0;
+  padding: calc(var(--safe-top) + 6px) calc(var(--safe-right) + 10px) 6px calc(var(--safe-left) + 10px);
+  border-bottom: 1px solid var(--chrome-line);
+}
+
+.bar.bottom {
+  bottom: 0;
+  padding: 8px calc(var(--safe-right) + 14px) calc(var(--safe-bottom) + 10px) calc(var(--safe-left) + 14px);
+  border-top: 1px solid var(--chrome-line);
+}
+
+.bar.top.away { transform: translateY(-104%); opacity: 0; pointer-events: none; }
+.bar.bottom.away { transform: translateY(104%); opacity: 0; pointer-events: none; }
+
+.bar .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.bar .title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-button {
+  min-width: 44px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+}
+
+.icon-button:active { background: color-mix(in srgb, var(--chrome-fg) 12%, transparent); }
+.icon-button[disabled] { opacity: 0.32; }
+
+/* -- progress ------------------------------------------------------------- */
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.seek {
+  flex: 1;
+  position: relative;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+}
+
+.seek .track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--chrome-line);
+}
+
+.seek .fill {
+  position: absolute;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.seek .knob {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.page-count {
+  /* Clear of the screen's rounded corner, where the last digit would sit in
+     the curve and be hard to read. */
+  padding-inline-end: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--chrome-dim);
+  white-space: nowrap;
+}
+
+/* -- segmented control ---------------------------------------------------- */
+
+.segmented {
+  display: inline-flex;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--chrome-line);
+}
+
+.segmented button {
+  padding: 7px 14px;
+  font-size: 13px;
+  background: transparent;
+  border-right: 1px solid var(--chrome-line);
+  white-space: nowrap;
+}
+
+.segmented button:last-child { border-right: 0; }
+.segmented button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+/* -- sheets (library, contents, settings) --------------------------------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--chrome-bg);
+  display: flex;
+  flex-direction: column;
+  transform: translateY(0);
+  transition: transform 0.26s ease;
+}
+
+.sheet[hidden] { display: none; }
+.sheet.away { transform: translateY(100%); }
+
+.sheet header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(var(--safe-top) + 10px) 14px 10px;
+  border-bottom: 1px solid var(--chrome-line);
+}
+
+.sheet header h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sheet .body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 14px calc(var(--safe-bottom) + 24px);
+}
+
+/* -- library -------------------------------------------------------------- */
+
+.shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 16px 12px;
+}
+
+.shelf .book {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: start;
+}
+
+.shelf .cover {
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  background: linear-gradient(160deg, #cfc7b8, #a99e8c);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shelf .cover img { width: 100%; height: 100%; object-fit: cover; }
+
+.shelf .cover .placeholder {
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #2f2a22;
+  writing-mode: vertical-rl;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.shelf .name {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--chrome-fg);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.shelf .meta { font-size: 10px; color: var(--chrome-dim); }
+
+.empty-note {
+  margin: 40px auto;
+  max-width: 22em;
+  text-align: center;
+  color: var(--chrome-dim);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+/* -- contents list -------------------------------------------------------- */
+
+.toc-list { list-style: none; margin: 0; padding: 0; }
+
+.toc-list li button {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: 11px 4px;
+  border-bottom: 1px solid var(--chrome-line);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toc-list li button[aria-current="true"] { color: var(--accent); font-weight: 600; }
+.toc-list li.depth-1 button { padding-inline-start: 20px; font-size: 13px; }
+.toc-list li.depth-2 button { padding-inline-start: 36px; font-size: 13px; }
+
+/* -- settings ------------------------------------------------------------- */
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--chrome-line);
+}
+
+.field > label {
+  flex: 0 0 6.5em;
+  font-size: 13px;
+  color: var(--chrome-dim);
+}
+
+.field .control { flex: 1; display: flex; align-items: center; gap: 10px; }
+.field input[type="range"] { flex: 1; accent-color: var(--accent); }
+.field .value {
+  min-width: 3.6em;
+  text-align: end;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--chrome-dim);
+}
+
+.field select, .field input[type="color"] {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--chrome-line);
+  background: transparent;
+  color: inherit;
+}
+
+.field input[type="color"] { padding: 2px; width: 46px; height: 30px; }
+
+.section-title {
+  margin: 20px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chrome-dim);
+  letter-spacing: 0.06em;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--chrome-dim);
+}
+
+/* -- toast ---------------------------------------------------------------- */
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 84px);
+  z-index: 60;
+  transform: translateX(-50%);
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: rgba(20, 20, 22, 0.86);
+  color: #fff;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#toast.show { opacity: 1; }
+
+/* -- busy ----------------------------------------------------------------- */
+
+#busy {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--page-bg) 78%, transparent);
+  font-size: 14px;
+  color: var(--chrome-dim);
+}
+
+#busy[hidden] { display: none; }
+
+/* -- odds and ends -------------------------------------------------------- */
+
+.spacer { flex: 1; }
+
+/* A chosen background image sits under the page; the chapter documents are
+   transparent, so it shows through the text. */
+#reader { background-repeat: no-repeat; }
+
+.swatches { display: inline-flex; gap: 6px; }
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--chrome-line);
+}
+
+.swatch:active { transform: scale(0.92); }
+
+.shelf .book .remove {
+  align-self: start;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #b4402f;
+  color: #fff;
+}

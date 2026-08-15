@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# Local test copies of books
+books/
+*.epub

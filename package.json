@@ -1,0 +1,6 @@
+{
+  "name": "epub-reader-web",
+  "private": true,
+  "type": "module",
+  "description": "Vertical-writing EPUB reader for iPhone and iPad (PWA)"
+}

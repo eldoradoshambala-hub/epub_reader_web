@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover puts the page under the notch; the bars pad themselves
+     back out with env(safe-area-inset-*). -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="縦書きリーダー">
+<meta name="theme-color" content="#f7f5f0">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+<title>縦書きリーダー</title>
+</head>
+<body>
+
+<!-- The reading surface. Two panes for a spread, plus a layer for pictures. -->
+<div id="reader">
+  <div class="stage">
+    <iframe class="pane-lead" title="本文"></iframe>
+    <iframe class="pane-facing" title="本文（対向ページ）" hidden></iframe>
+    <div class="fixed-layer" hidden></div>
+  </div>
+</div>
+
+<div class="bar top away" id="bar-top">
+  <div class="row">
+    <button class="icon-button" id="btn-shelf" aria-label="本棚">本棚</button>
+    <div class="title" id="book-title"></div>
+    <button class="icon-button" id="btn-contents" aria-label="目次">目次</button>
+    <button class="icon-button" id="btn-settings" aria-label="表示設定">Aa</button>
+  </div>
+</div>
+
+<div class="bar bottom away" id="bar-bottom">
+  <div class="row">
+    <div class="segmented" id="spread-modes" role="group" aria-label="ページ表示">
+      <button type="button" data-mode="auto" aria-pressed="true">自動</button>
+      <button type="button" data-mode="single" aria-pressed="false">単ページ</button>
+      <button type="button" data-mode="double" aria-pressed="false">見開き</button>
+    </div>
+    <span class="spacer"></span>
+    <button class="icon-button" id="btn-shift-left" aria-label="見開きを左へずらす">◀</button>
+    <button class="icon-button" id="btn-shift-right" aria-label="見開きを右へずらす">▶</button>
+  </div>
+  <div class="progress-row">
+    <div class="seek" id="seek" role="slider" aria-label="読書位置"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+      <div class="track"></div>
+      <div class="fill"></div>
+      <div class="knob"></div>
+    </div>
+    <div class="page-count" id="page-count"></div>
+  </div>
+</div>
+
+<!-- 本棚 ---------------------------------------------------------------- -->
+<section class="sheet" id="library" hidden>
+  <header>
+    <h1>本棚</h1>
+    <button class="icon-button" id="btn-edit-shelf">編集</button>
+    <button class="icon-button" id="btn-import">取り込む</button>
+    <button class="icon-button" id="btn-close-library" hidden>閉じる</button>
+  </header>
+  <div class="body">
+    <!-- No accept filter on purpose: iOS hides files whose type it cannot
+         match, and an EPUB coming out of Dropbox or Synology Drive is often
+         handed over as a plain octet-stream. -->
+    <input type="file" id="file-input" multiple class="hidden">
+    <div class="shelf" id="shelf"></div>
+    <p class="empty-note" id="shelf-empty">
+      まだ本がありません。<br>
+      「取り込む」から「ファイル」アプリを開き、Dropbox や Synology Drive の
+      EPUB を選んで下さい。取り込んだ本は端末内に保存され、次からはオフラインでも開けます。
+    </p>
+  </div>
+</section>
+
+<!-- 目次 ---------------------------------------------------------------- -->
+<section class="sheet" id="contents" hidden>
+  <header>
+    <h1>目次</h1>
+    <button class="icon-button" id="btn-close-contents">閉じる</button>
+  </header>
+  <div class="body">
+    <ul class="toc-list" id="toc-list"></ul>
+    <p class="empty-note" id="toc-empty" hidden>この本には目次がありません。</p>
+  </div>
+</section>
+
+<!-- 表示設定 ------------------------------------------------------------- -->
+<section class="sheet" id="settings" hidden>
+  <header>
+    <h1>表示設定</h1>
+    <button class="icon-button" id="btn-reset-settings">既定値</button>
+    <button class="icon-button" id="btn-close-settings">閉じる</button>
+  </header>
+  <div class="body">
+
+    <p class="section-title">文字</p>
+    <div class="field">
+      <label for="set-fontFamily">書体</label>
+      <div class="control">
+        <select id="set-fontFamily">
+          <option value="">標準（明朝）</option>
+          <option value="Hiragino Mincho ProN">ヒラギノ明朝</option>
+          <option value="Toppan Bunkyu Mincho">凸版文久明朝</option>
+          <option value="YuMincho">游明朝</option>
+          <option value="Hiragino Sans">ヒラギノ角ゴシック</option>
+          <option value="Toppan Bunkyu Gothic">凸版文久ゴシック</option>
+          <option value="Hiragino Maru Gothic ProN">ヒラギノ丸ゴ</option>
+          <option value="Tsukushi A Round Gothic">筑紫A丸ゴシック</option>
+          <option value="YuGothic">游ゴシック</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-fontSize">文字の大きさ</label>
+      <div class="control">
+        <input type="range" id="set-fontSize" min="12" max="40" step="1">
+        <span class="value" data-for="set-fontSize"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-fontWeight">文字の太さ</label>
+      <div class="control">
+        <input type="range" id="set-fontWeight" min="100" max="900" step="100">
+        <span class="value" data-for="set-fontWeight"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-textStroke">太さの微調整</label>
+      <div class="control">
+        <input type="range" id="set-textStroke" min="0" max="0.6" step="0.05">
+        <span class="value" data-for="set-textStroke"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-lineHeight">行間</label>
+      <div class="control">
+        <input type="range" id="set-lineHeight" min="1.3" max="3" step="0.05">
+        <span class="value" data-for="set-lineHeight"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-letterSpacing">字間</label>
+      <div class="control">
+        <input type="range" id="set-letterSpacing" min="0" max="0.4" step="0.01">
+        <span class="value" data-for="set-letterSpacing"></span>
+      </div>
+    </div>
+    <p class="hint">
+      書体は端末に入っているものだけが使えます。無い書体を選んだ場合は標準の明朝になります。
+    </p>
+
+    <p class="section-title">余白と組み方</p>
+    <div class="field">
+      <label for="set-marginTop">上の余白</label>
+      <div class="control">
+        <input type="range" id="set-marginTop" min="0" max="120" step="1">
+        <span class="value" data-for="set-marginTop"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-marginBottom">下の余白</label>
+      <div class="control">
+        <input type="range" id="set-marginBottom" min="0" max="120" step="1">
+        <span class="value" data-for="set-marginBottom"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-marginLeft">左の余白</label>
+      <div class="control">
+        <input type="range" id="set-marginLeft" min="0" max="120" step="1">
+        <span class="value" data-for="set-marginLeft"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-marginRight">右の余白</label>
+      <div class="control">
+        <input type="range" id="set-marginRight" min="0" max="120" step="1">
+        <span class="value" data-for="set-marginRight"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-writingMode">組方向</label>
+      <div class="control">
+        <select id="set-writingMode">
+          <option value="auto">本に従う</option>
+          <option value="vertical">縦書き</option>
+          <option value="horizontal">横書き</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-spreadGap">見開きの溝</label>
+      <div class="control">
+        <input type="range" id="set-spreadGap" min="0" max="120" step="2">
+        <span class="value" data-for="set-spreadGap"></span>
+      </div>
+    </div>
+
+    <p class="section-title">配色</p>
+    <div class="field">
+      <label for="set-backgroundColor">背景色</label>
+      <div class="control">
+        <input type="color" id="set-backgroundColor">
+        <span class="swatches" id="bg-presets"></span>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-textColor">文字色</label>
+      <div class="control">
+        <input type="color" id="set-textColor">
+      </div>
+    </div>
+    <div class="field">
+      <label>背景画像</label>
+      <div class="control">
+        <button class="icon-button" id="btn-pick-bg">選ぶ</button>
+        <button class="icon-button" id="btn-clear-bg">外す</button>
+        <input type="file" id="bg-input" accept="image/*" class="hidden">
+        <span class="value" id="bg-state"></span>
+      </div>
+    </div>
+
+    <p class="section-title">漫画・画像ページ</p>
+    <div class="field">
+      <label for="set-mangaFit">表示</label>
+      <div class="control">
+        <select id="set-mangaFit">
+          <option value="contain">全体を収める</option>
+          <option value="width">幅に合わせる</option>
+          <option value="height">高さに合わせる</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-mangaBackground">背景色</label>
+      <div class="control">
+        <input type="color" id="set-mangaBackground">
+      </div>
+    </div>
+
+    <p class="section-title">この端末</p>
+    <p class="hint" id="storage-note"></p>
+    <p class="hint" id="version-note"></p>
+  </div>
+</section>
+
+<div id="toast"></div>
+<div id="busy" hidden><span id="busy-text">読み込み中…</span></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
