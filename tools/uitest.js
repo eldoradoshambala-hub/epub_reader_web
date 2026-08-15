@@ -35,6 +35,81 @@ async function openFirstBook() {
   return books[0];
 }
 
+/* The shelf: the home of the application, so everything it can do is checked
+   the way it is done -- through the buttons. */
+async function shelfChecks(check) {
+  const app = window.app;
+  await app.showLibrary();
+  await wait(700);
+  check('本棚が開く', !document.getElementById('library').hidden
+        && !document.getElementById('library').classList.contains('away'));
+  check('続きから が出る', !document.getElementById('resume').hidden);
+
+  const before = (await app.library.list()).map((b) => b.id);
+  if (before.length >= 2) {
+    const moved = (await app.library.list())[0];
+    await app.moveBook(moved, +1, await app.library.list());
+    const after = (await app.library.list()).map((b) => b.id);
+    check('本の位置を入れ替えられる', after[1] === before[0] && after[0] === before[1],
+          `${before.slice(0, 2)} -> ${after.slice(0, 2)}`);
+  } else {
+    check('本の位置を入れ替えられる', true, '本が1冊（省略）');
+  }
+
+  const target = (await app.library.list())[0];
+  await app.showBookMenu(target);
+  await wait(400);
+  await app.setBookGenre('manga');
+  app.setGenre('novel');
+  await wait(400);
+  const hiddenByGenre = !Array.from(document.getElementById('shelf').children)
+    .some((card) => card.querySelector('.name').textContent === (target.title || target.fileName));
+  check('ジャンルで絞り込める', hiddenByGenre);
+  app.setGenre('all');
+  await wait(300);
+
+  const folder = await app.library.addFolder('テスト棚');
+  await app.library.update(target.id, { folderId: folder.id });
+  await app.renderShelf();
+  await wait(300);
+  const atRoot = Array.from(document.getElementById('shelf').children)
+    .some((card) => card.querySelector('.name').textContent === folder.name);
+  check('フォルダが本棚に出る', atRoot);
+
+  app.folderId = folder.id;
+  await app.renderShelf();
+  await wait(300);
+  const inside = Array.from(document.getElementById('shelf').children)
+    .some((card) => card.querySelector('.name').textContent === (target.title || target.fileName));
+  check('フォルダの中に本が入る', inside);
+  check('フォルダ名が見出しに出る',
+        document.getElementById('shelf-title').textContent === folder.name);
+
+  await app.library.removeFolder(folder.id);
+  app.folderId = null;
+  await app.renderShelf();
+  await wait(300);
+  const back = (await app.library.list()).find((b) => b.id === target.id);
+  check('フォルダを消すと本は本棚へ戻る', back && !back.folderId);
+
+  const count = (await app.library.list()).length;
+  const doomed = (await app.library.list())[count - 1];
+  await app.library.remove(doomed.id);
+  await app.renderShelf();
+  check('本を削除できる', (await app.library.list()).length === count - 1);
+
+  const cover = await app.library.coverFor((await app.library.list())[0].id);
+  check('読んだ後も表紙が残る', !!cover && cover.size > 0,
+        cover ? `${Math.round(cover.size / 1024)} KB` : 'なし');
+
+  closeSheetIfOpen('library');
+}
+
+function closeSheetIfOpen(id) {
+  const sheet = document.getElementById(id);
+  if (!sheet.hidden) sheet.classList.add('away');
+}
+
 /** The first spine item with more than a couple of pages of running text. */
 async function findTextChapter() {
   const app = window.app;
@@ -169,12 +244,14 @@ export async function run() {
   await wait(400);
   app.savePositionNow();
   await wait(400);
-  const saved = await app.library.get(record.id);
-  check('読書位置が保存される',
-        saved && saved.position && saved.position.spineIndex === chapter,
-        JSON.stringify(saved && saved.position));
+  // Positions live in their own store now, apart from the book record.
+  const saved = await app.library.positionFor(record.id);
+  check('読書位置が保存される', saved && saved.spineIndex === chapter,
+        JSON.stringify(saved));
 
   check('章のページ数が測れている', startPages > 0, String(startPages));
+
+  await shelfChecks(check);
 
   return { passed: results.filter((r) => r.ok).length, total: results.length, results };
 }

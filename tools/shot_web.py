@@ -81,9 +81,11 @@ window.__shotStep = 'start';
     // Opened by clicking, so the shot exercises the same path a finger does.
     if (sheet) document.getElementById('btn-' + (sheet === 'library' ? 'shelf' : sheet)).click();
     document.getElementById('toast').classList.remove('show');
-    await new Promise(r => setTimeout(r, 900));
+    await new Promise(r => setTimeout(r, 2200));
     document.getElementById('toast').classList.remove('show');
-    step('done: shelf=' + document.getElementById('shelf').children.length
+    step('done: sheet=' + (sheet ? (document.getElementById(sheet).hidden ? 'hidden'
+           : document.getElementById(sheet).className) : '-')
+         + ' shelf=' + document.getElementById('shelf').children.length
          + ' books=' + (await window.app.library.list()).length
          + ' open=' + !!window.app.view.book);
     window.__shotReady = true;

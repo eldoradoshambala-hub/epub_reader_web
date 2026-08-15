@@ -24,10 +24,15 @@ import * as test from '/tools/uitest.js';
     const listing = await (await fetch('/books/')).text();
     const names = Array.from(listing.matchAll(/href="([^"]+\\.epub)"/g))
       .map((m) => decodeURIComponent(m[1]));
-    const name = names.find((n) => n.includes(%(book)s)) || names[0];
-    if (!name) throw new Error('本がありません');
-    const blob = await (await fetch('/books/' + encodeURIComponent(name))).blob();
-    await window.app.importFiles([new File([blob], name, { type: 'application/epub+zip' })]);
+    // Three books: the shelf tests need something to reorder and to file away.
+    const first = names.find((n) => n.includes(%(book)s)) || names[0];
+    const chosen = [first, ...names.filter((n) => n !== first).slice(0, 2)];
+    const files = [];
+    for (const one of chosen) {
+      const blob = await (await fetch('/books/' + encodeURIComponent(one))).blob();
+      files.push(new File([blob], one, { type: 'application/epub+zip' }));
+    }
+    await window.app.importFiles(files);
     window.__uiResult = await test.run();
   } catch (error) {
     window.__uiResult = { error: String(error && error.stack || error) };

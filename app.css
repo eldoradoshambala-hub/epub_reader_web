@@ -302,6 +302,105 @@ button {
   padding: 10px 14px calc(var(--safe-bottom) + 24px);
 }
 
+/* -- shelf: genre tabs, folders, editing ---------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--chrome-line);
+  overflow-x: auto;
+}
+
+.tabs button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--chrome-fg) 7%, transparent);
+}
+
+.tabs button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--chrome-line);
+}
+
+.edit-bar .hint { margin: 0; }
+
+/* Where you left off, at the top of the shelf. */
+.resume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 18px;
+  padding: 10px;
+  border-radius: 12px;
+  text-align: start;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.resume-cover {
+  flex: 0 0 44px;
+  height: 66px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #cfc7b8;
+}
+
+.resume-cover img { width: 100%; height: 100%; object-fit: cover; }
+.resume-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.resume-label { font-size: 11px; color: var(--accent); font-weight: 600; }
+
+.resume-title {
+  font-size: 14px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.resume-meta { font-size: 11px; color: var(--chrome-dim); }
+
+.card-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.card-actions .small {
+  flex: 1;
+  padding: 5px 0;
+  border-radius: 6px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--chrome-fg) 10%, transparent);
+}
+
+.folder-cover {
+  font-size: 34px;
+  background: linear-gradient(160deg, #e3d9c2, #c8b995);
+}
+
+.book.current .cover {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.segmented.wide { display: flex; width: 100%; }
+.segmented.wide button { flex: 1; }
+
+.icon-button.danger { color: #b4402f; }
+
 /* -- library -------------------------------------------------------------- */
 
 .shelf {

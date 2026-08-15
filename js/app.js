@@ -51,18 +51,25 @@ function busy(on, text) {
    re-run the layout of the page underneath. */
 function openSheet(id) {
   const sheet = el(id);
+  sheet.dataset.open = '1';
   sheet.hidden = false;
   sheet.classList.add('away');
-  requestAnimationFrame(() => sheet.classList.remove('away'));
+  // Flush the style so the sheet starts off-screen, then let it slide in.
+  // This used to wait for an animation frame, but a frame is not guaranteed
+  // to arrive promptly -- and if it did not, the class stayed on and the
+  // sheet never appeared at all.
+  void sheet.offsetHeight;
+  sheet.classList.remove('away');
 }
 
 function closeSheet(id) {
   const sheet = el(id);
+  delete sheet.dataset.open;
   sheet.classList.add('away');
-  // Only take it out of the layout if it is still on its way out: opening the
-  // same sheet again during the slide would otherwise be undone by this timer.
+  // Only take it out of the layout if it is still meant to be closed: opening
+  // the same sheet again during the slide would otherwise be undone here.
   setTimeout(() => {
-    if (sheet.classList.contains('away')) sheet.hidden = true;
+    if (!sheet.dataset.open) sheet.hidden = true;
   }, 260);
 }
 
@@ -79,6 +86,10 @@ class App {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loadSettings());
     this.record = null;         // shelf entry of the open book
     this.editingShelf = false;
+    this.folderId = null;       // which folder the shelf is showing
+    this.genre = 'all';
+    this.allBooks = [];
+    this.menuRecord = null;
     this.backgroundUrl = null;
     this.coverUrls = [];
     this.saveTimer = 0;
@@ -114,6 +125,28 @@ class App {
     el('btn-import').addEventListener('click', () => el('file-input').click());
     el('file-input').addEventListener('change', (e) => this.importFiles(e.target.files));
     el('btn-edit-shelf').addEventListener('click', () => this.toggleShelfEditing());
+    el('btn-new-folder').addEventListener('click', () => this.newFolder());
+    el('btn-folder-up').addEventListener('click', async () => {
+      const folders = await this.library.folders();
+      const here = folders.find((f) => f.id === this.folderId);
+      this.folderId = here ? here.parentId || null : null;
+      await this.renderShelf();
+    });
+    for (const button of el('genre-tabs').querySelectorAll('button')) {
+      button.addEventListener('click', () => this.setGenre(button.dataset.genre));
+    }
+    el('btn-close-book-menu').addEventListener('click', () => closeSheet('book-menu'));
+    for (const button of el('book-genre').querySelectorAll('button')) {
+      button.addEventListener('click', () => this.setBookGenre(button.dataset.genre));
+    }
+    el('btn-move-back').addEventListener('click', () => this.moveFromMenu(-1));
+    el('btn-move-forward').addEventListener('click', () => this.moveFromMenu(+1));
+    el('btn-delete-book').addEventListener('click', async () => {
+      const record = this.menuRecord;
+      if (!record) return;
+      closeSheet('book-menu');
+      await this.removeRecord(record);
+    });
 
     for (const button of el('spread-modes').querySelectorAll('button')) {
       button.addEventListener('click', () => this.setSpreadMode(button.dataset.mode));
@@ -152,59 +185,203 @@ class App {
     openSheet('library');
   }
 
+  /* One pass over the shelf: folders first, then the books in this folder that
+     match the chosen genre, in the order the user put them in. */
   async renderShelf() {
-    const books = await this.library.list();
-    const shelf = el('shelf');
+    const [books, folders, covers, positions] = await Promise.all([
+      this.library.list(),
+      this.library.folders(),
+      this.library.covers(),
+      this.positionsById(),
+    ]);
+    this.allBooks = books;
+
     for (const url of this.coverUrls) URL.revokeObjectURL(url);
     this.coverUrls = [];
+    const coverUrl = (id) => {
+      const blob = covers.get(id);
+      if (!blob) return null;
+      const url = URL.createObjectURL(blob);
+      this.coverUrls.push(url);
+      return url;
+    };
+
+    const here = folders.filter((f) => (f.parentId || null) === this.folderId);
+    const mine = books.filter((b) => (b.folderId || null) === this.folderId
+      && (this.genre === 'all' || (b.genre || 'other') === this.genre));
+
+    const folder = folders.find((f) => f.id === this.folderId);
+    el('shelf-title').textContent = folder ? folder.name : '本棚';
+    el('btn-folder-up').hidden = !this.folderId;
+    el('edit-bar').hidden = !this.editingShelf;
+
+    this.renderResume(books, covers, positions);
+
+    const shelf = el('shelf');
     shelf.replaceChildren();
+    shelf.classList.toggle('editing', this.editingShelf);
     el('shelf-empty').hidden = books.length > 0;
 
-    for (const record of books) {
-      const card = document.createElement('div');
-      card.className = 'book';
-
-      const open = document.createElement('button');
-      open.className = 'cover';
-      if (record.cover) {
-        const url = URL.createObjectURL(record.cover);
-        this.coverUrls.push(url);
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = '';
-        open.appendChild(img);
-      } else {
-        const placeholder = document.createElement('span');
-        placeholder.className = 'placeholder';
-        placeholder.textContent = record.title || record.fileName;
-        open.appendChild(placeholder);
-      }
-      open.addEventListener('click', () => this.openRecord(record));
-
-      const name = document.createElement('div');
-      name.className = 'name';
-      name.textContent = record.title || record.fileName;
-
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      const parts = [];
-      if (record.creator) parts.push(record.creator);
-      if (record.position && record.position.fraction > 0.005) {
-        parts.push(`${Math.round(record.position.fraction * 100)}%`);
-      }
-      meta.textContent = parts.join(' ・ ') || formatSize(record.size);
-
-      card.append(open, name, meta);
-
-      if (this.editingShelf) {
-        const remove = document.createElement('button');
-        remove.className = 'remove';
-        remove.textContent = '削除';
-        remove.addEventListener('click', () => this.removeRecord(record));
-        card.appendChild(remove);
-      }
-      shelf.appendChild(card);
+    for (const entry of here) shelf.appendChild(this.folderCard(entry, books));
+    for (const record of mine) {
+      shelf.appendChild(this.bookCard(record, coverUrl(record.id), positions.get(record.id), mine));
     }
+  }
+
+  async positionsById() {
+    const books = await this.library.list();
+    const pairs = await Promise.all(
+      books.map(async (b) => [b.id, await this.library.positionFor(b.id)])
+    );
+    return new Map(pairs);
+  }
+
+  folderCard(folder, books) {
+    const count = books.filter((b) => b.folderId === folder.id).length;
+    const card = document.createElement('div');
+    card.className = 'book folder';
+
+    const open = document.createElement('button');
+    open.className = 'cover folder-cover';
+    open.textContent = '📁';
+    open.addEventListener('click', () => {
+      this.folderId = folder.id;
+      this.renderShelf();
+    });
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = folder.name;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = `${count} 冊`;
+
+    card.append(open, name, meta);
+    if (this.editingShelf) {
+      const row = document.createElement('div');
+      row.className = 'card-actions';
+      row.append(
+        this.smallButton('名前', async () => {
+          const next = prompt('フォルダ名', folder.name);
+          if (next && next.trim()) {
+            await this.library.renameFolder(folder.id, next.trim());
+            this.renderShelf();
+          }
+        }),
+        this.smallButton('削除', async () => {
+          if (!confirm(`フォルダ「${folder.name}」を削除します。中の本は残ります。`)) return;
+          await this.library.removeFolder(folder.id);
+          this.renderShelf();
+        }),
+      );
+      card.appendChild(row);
+    }
+    return card;
+  }
+
+  bookCard(record, url, position, siblings) {
+    const card = document.createElement('div');
+    card.className = 'book';
+    if (this.record && this.record.id === record.id) card.classList.add('current');
+
+    const open = document.createElement('button');
+    open.className = 'cover';
+    if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = '';
+      open.appendChild(img);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'placeholder';
+      placeholder.textContent = record.title || record.fileName;
+      open.appendChild(placeholder);
+    }
+    open.addEventListener('click', () => this.openRecord(record));
+    open.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.showBookMenu(record);
+    });
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = record.title || record.fileName;
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const parts = [];
+    if (record.creator) parts.push(record.creator);
+    if (position && position.fraction > 0.005) {
+      parts.push(`${Math.round(position.fraction * 100)}%`);
+    }
+    meta.textContent = parts.join(' ・ ') || formatSize(record.size);
+
+    card.append(open, name, meta);
+
+    if (this.editingShelf) {
+      const row = document.createElement('div');
+      row.className = 'card-actions';
+      row.append(
+        this.smallButton('◀', () => this.moveBook(record, -1, siblings)),
+        this.smallButton('…', () => this.showBookMenu(record)),
+        this.smallButton('▶', () => this.moveBook(record, +1, siblings)),
+      );
+      card.appendChild(row);
+    }
+    return card;
+  }
+
+  smallButton(label, onClick) {
+    const button = document.createElement('button');
+    button.className = 'small';
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  /* Moving is expressed against what is on screen -- swap with the neighbour
+     you can see -- but written as a complete order, so a book filtered out of
+     the current view keeps its place. */
+  async moveBook(record, delta, siblings) {
+    const at = siblings.findIndex((b) => b.id === record.id);
+    const to = at + delta;
+    if (at < 0 || to < 0 || to >= siblings.length) return;
+
+    const all = this.allBooks.map((b) => b.id);
+    const from = all.indexOf(record.id);
+    const target = all.indexOf(siblings[to].id);
+    if (from < 0 || target < 0) return;
+    all.splice(from, 1);
+    all.splice(target, 0, record.id);
+
+    await this.library.reorder(all);
+    await this.renderShelf();
+  }
+
+  renderResume(books, covers, positions) {
+    const id = localStorage.getItem(LAST_BOOK_KEY);
+    const record = books.find((b) => b.id === id);
+    const showable = record && !this.folderId && this.genre === 'all' && !this.editingShelf;
+    el('resume').hidden = !showable;
+    if (!showable) return;
+
+    const blob = covers.get(record.id);
+    const image = el('resume-cover');
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      this.coverUrls.push(url);
+      image.src = url;
+      image.hidden = false;
+    } else {
+      image.hidden = true;
+    }
+    el('resume-title').textContent = record.title || record.fileName;
+    const position = positions.get(record.id);
+    el('resume-meta').textContent = position && position.fraction > 0.005
+      ? `${Math.round(position.fraction * 100)}%`
+      : (record.creator || '');
+    el('resume').onclick = () => this.openRecord(record);
   }
 
   toggleShelfEditing() {
@@ -213,12 +390,82 @@ class App {
     this.renderShelf();
   }
 
+  setGenre(genre) {
+    this.genre = genre;
+    for (const button of el('genre-tabs').querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String(button.dataset.genre === genre));
+    }
+    this.renderShelf();
+  }
+
+  async newFolder() {
+    const name = prompt('フォルダ名');
+    if (!name || !name.trim()) return;
+    await this.library.addFolder(name.trim(), this.folderId);
+    await this.renderShelf();
+  }
+
+  // -- one book's settings ---------------------------------------------------
+
+  async showBookMenu(record) {
+    this.menuRecord = record;
+    el('book-menu-title').textContent = record.title || record.fileName;
+    for (const button of el('book-genre').querySelectorAll('button')) {
+      button.setAttribute('aria-pressed',
+        String(button.dataset.genre === (record.genre || 'other')));
+    }
+
+    const folders = await this.library.folders();
+    const list = el('folder-choices');
+    list.replaceChildren();
+    const choose = (id, label) => {
+      const li = document.createElement('li');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.setAttribute('aria-current', String((record.folderId || null) === id));
+      button.addEventListener('click', async () => {
+        await this.library.update(record.id, { folderId: id });
+        record.folderId = id;
+        closeSheet('book-menu');
+        await this.renderShelf();
+        toast(id ? `「${label}」へ移動しました` : '本棚の直下へ移動しました');
+      });
+      li.appendChild(button);
+      list.appendChild(li);
+    };
+    choose(null, '本棚の直下');
+    for (const folder of folders) choose(folder.id, folder.name);
+
+    openSheet('book-menu');
+  }
+
+  async setBookGenre(genre) {
+    if (!this.menuRecord) return;
+    await this.library.update(this.menuRecord.id, { genre });
+    this.menuRecord.genre = genre;
+    for (const button of el('book-genre').querySelectorAll('button')) {
+      button.setAttribute('aria-pressed', String(button.dataset.genre === genre));
+    }
+    await this.renderShelf();
+    toast('ジャンルを変えました');
+  }
+
+  async moveFromMenu(delta) {
+    if (!this.menuRecord) return;
+    const record = this.menuRecord;
+    const siblings = this.allBooks.filter((b) => (b.folderId || null) === (record.folderId || null)
+      && (this.genre === 'all' || (b.genre || 'other') === this.genre));
+    await this.moveBook(record, delta, siblings);
+  }
+
   async removeRecord(record) {
     if (!confirm(`「${record.title || record.fileName}」を本棚から削除します。`)) return;
     if (this.record && this.record.id === record.id) {
       this.view.close();
       this.record = null;
       el('book-title').textContent = '';
+      localStorage.removeItem(LAST_BOOK_KEY);
     }
     await this.library.remove(record.id);
     await this.renderShelf();
@@ -277,7 +524,10 @@ class App {
     return {
       title: book.metadata.title || file.name.replace(/\.epub$/i, ''),
       creator: book.metadata.creator || '',
-      fixed: book.isFixedLayout,
+      // A fixed-layout book is a picture book: manga, near enough to start
+      // with. The genre is a shelf label, not a rendering decision, so a wrong
+      // guess costs nothing and can be corrected from the book's own menu.
+      genre: book.isFixedLayout ? 'manga' : 'novel',
       cover,
     };
   }
@@ -290,7 +540,7 @@ class App {
       const file = await this.library.fileFor(record.id);
       if (!file) throw new Error('本のデータが見つかりません');
       const book = await Epub.open(file, record.fileName);
-      const at = record.position || {};
+      const at = (await this.library.positionFor(record.id)) || {};
       await this.view.open(book, {
         spineIndex: at.spineIndex || 0,
         page: at.page || 0,
@@ -406,7 +656,7 @@ class App {
       ratio: state.pages ? state.page / state.pages : 0,
       fraction: state.fraction,
     };
-    this.record.position = position;
+    this.position = position;
     clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.library.savePosition(this.record.id, position).catch(() => {});
@@ -414,9 +664,9 @@ class App {
   }
 
   savePositionNow() {
-    if (!this.record || !this.record.position) return;
+    if (!this.record || !this.position) return;
     clearTimeout(this.saveTimer);
-    this.library.savePosition(this.record.id, this.record.position).catch(() => {});
+    this.library.savePosition(this.record.id, this.position).catch(() => {});
   }
 
   bindSeek() {
@@ -686,11 +936,9 @@ async function boot() {
     app.showBackgroundImage(await library.getValue('background-image'));
     await app.refreshStorageNote();
 
-    const books = await library.list();
-    const lastId = localStorage.getItem(LAST_BOOK_KEY);
-    const last = books.find((record) => record.id === lastId);
-    if (last) await app.openRecord(last);
-    else await app.showLibrary();
+    // The shelf is the home screen; the book you were reading is one tap away
+    // on the 「続きから」 card rather than something the app decides for you.
+    await app.showLibrary();
 
     // Asking for persistence stops iOS reclaiming the shelf when storage runs
     // low. It is granted silently for an installed web app.

@@ -62,22 +62,80 @@
 <!-- 本棚 ---------------------------------------------------------------- -->
 <section class="sheet" id="library" hidden>
   <header>
-    <h1>本棚</h1>
+    <button class="icon-button" id="btn-folder-up" hidden>‹</button>
+    <h1 id="shelf-title">本棚</h1>
     <button class="icon-button" id="btn-edit-shelf">編集</button>
     <button class="icon-button" id="btn-import">取り込む</button>
     <button class="icon-button" id="btn-close-library" hidden>閉じる</button>
   </header>
+
+  <nav class="tabs" id="genre-tabs" role="tablist">
+    <button type="button" data-genre="all" aria-pressed="true">すべて</button>
+    <button type="button" data-genre="novel" aria-pressed="false">小説</button>
+    <button type="button" data-genre="manga" aria-pressed="false">漫画</button>
+    <button type="button" data-genre="other" aria-pressed="false">その他</button>
+  </nav>
+
+  <div class="edit-bar" id="edit-bar" hidden>
+    <button class="icon-button" id="btn-new-folder">＋ フォルダ</button>
+    <span class="hint" id="edit-hint">本を長く押すか「…」で、ジャンルとフォルダを変えられます</span>
+  </div>
+
   <div class="body">
     <!-- No accept filter on purpose: iOS hides files whose type it cannot
          match, and an EPUB coming out of Dropbox or Synology Drive is often
          handed over as a plain octet-stream. -->
     <input type="file" id="file-input" multiple class="hidden">
+
+    <button class="resume" id="resume" hidden>
+      <span class="resume-cover"><img id="resume-cover" alt=""></span>
+      <span class="resume-text">
+        <span class="resume-label">続きから</span>
+        <span class="resume-title" id="resume-title"></span>
+        <span class="resume-meta" id="resume-meta"></span>
+      </span>
+    </button>
+
     <div class="shelf" id="shelf"></div>
     <p class="empty-note" id="shelf-empty">
       まだ本がありません。<br>
       「取り込む」から「ファイル」アプリを開き、Dropbox や Synology Drive の
       EPUB を選んで下さい。取り込んだ本は端末内に保存され、次からはオフラインでも開けます。
     </p>
+  </div>
+</section>
+
+<!-- 1 冊ごとの操作 ------------------------------------------------------- -->
+<section class="sheet" id="book-menu" hidden>
+  <header>
+    <h1 id="book-menu-title">本の設定</h1>
+    <button class="icon-button" id="btn-close-book-menu">閉じる</button>
+  </header>
+  <div class="body">
+    <p class="section-title">ジャンル</p>
+    <div class="segmented wide" id="book-genre">
+      <button type="button" data-genre="novel">小説</button>
+      <button type="button" data-genre="manga">漫画</button>
+      <button type="button" data-genre="other">その他</button>
+    </div>
+
+    <p class="section-title">フォルダ</p>
+    <ul class="toc-list" id="folder-choices"></ul>
+
+    <p class="section-title">この本</p>
+    <div class="field">
+      <label>並び</label>
+      <div class="control">
+        <button class="icon-button" id="btn-move-back">◀ 前へ</button>
+        <button class="icon-button" id="btn-move-forward">後ろへ ▶</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>削除</label>
+      <div class="control">
+        <button class="icon-button danger" id="btn-delete-book">本棚から削除</button>
+      </div>
+    </div>
   </div>
 </section>
 
