@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS = {
   mangaFit: 'contain',
   mangaBackground: '#1c1c1c',
   pageAnimation: false,      // sliding page turns; off by default on a phone
+  swipeDepth: 'normal',      // how far a swipe goes before the page turns
 };
 
 const XHTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -34,8 +35,19 @@ const XHTML_NS = 'http://www.w3.org/1999/xhtml';
 // keep one enormous single-file chapter from stalling the interface.
 const MAX_TEXT_NODES = 30000;
 
-const SWIPE_THRESHOLD = 45;     // px before a drag counts as a page turn
 const TAP_SLOP = 12;            // px of movement still counted as a tap
+
+/* How far the finger travels before a swipe turns the page, as a share of the
+   screen's width.
+
+   A fixed number of pixels was the wrong measure: 45px is a twitch, and the
+   page turned before the gesture felt like it had begun. A sheet of paper
+   bends under the finger and goes over somewhere past the middle of the
+   movement, so the distance is taken from the screen and the middle setting
+   sits near a third of it -- about where the hand expects the paper to give. */
+const SWIPE_SHARES = { shallow: 0.16, normal: 0.32, deep: 0.5 };
+const SWIPE_MIN = 44;           // never ask for less than a deliberate flick
+const SWIPE_MAX = 300;          // nor for a sweep across a tablet
 
 /* Resolves when a picture can be painted -- or after a moment, whatever
    happened. A corrupt image rejects decode(), and waiting on it for ever would
@@ -819,6 +831,13 @@ export class Reader {
     else this.onTapMiddle();
   }
 
+  /** How far a finger must travel, on this screen, to turn the page. */
+  get swipeDistance() {
+    const share = SWIPE_SHARES[this.settings.swipeDepth] || SWIPE_SHARES.normal;
+    const width = window.innerWidth || 320;
+    return Math.max(SWIPE_MIN, Math.min(width * share, SWIPE_MAX));
+  }
+
   _attachTouch(target, paneEl) {
     let startX = 0;
     let startY = 0;
@@ -849,7 +868,7 @@ export class Reader {
         this._handleTap(touch.clientX, e.target, paneEl);
         return;
       }
-      if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
+      if (Math.abs(dx) > this.swipeDistance && Math.abs(dx) > Math.abs(dy)) {
         // A swipe turns the page the way a hand does. In a right-bound book
         // the next page is the one lying on the left, so it is lifted and
         // carried rightward -- the finger travels left to right. A left-bound

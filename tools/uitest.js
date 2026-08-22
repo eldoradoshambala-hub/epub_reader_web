@@ -212,13 +212,14 @@ export async function run() {
   // A right-bound book: the next page is lifted from the left and carried
   // rightward, so the finger travels left to right.
   const swipeStart = app.reader.pageIndex;
-  swipe(+120);
+  const reach = Math.ceil(app.reader.swipeDistance) + 30;
+  swipe(+reach);
   await settle();
   const afterSwipeForward = app.reader.pageIndex;
   check('左から右へのスワイプで進む', afterSwipeForward > swipeStart,
         `${swipeStart} -> ${afterSwipeForward}`);
 
-  swipe(-120);
+  swipe(-reach);
   await settle();
   check('右から左へのスワイプで戻る', app.reader.pageIndex === swipeStart,
         `${afterSwipeForward} -> ${app.reader.pageIndex}`);
@@ -230,6 +231,24 @@ export async function run() {
   await settle();
   check('中途半端な指の動きでは何も起きない', app.reader.pageIndex === beforeSmall,
         `${beforeSmall} -> ${app.reader.pageIndex}`);
+
+  // The old fixed threshold was 45px, which is a twitch. A swipe that short
+  // must no longer be enough on a phone-sized screen.
+  const beforeShort = app.reader.pageIndex;
+  swipe(+50, 120);
+  await settle();
+  check('45px 程度の短いスワイプでは変わらない', app.reader.pageIndex === beforeShort,
+        `必要 ${Math.round(app.reader.swipeDistance)}px / ${beforeShort} -> ${app.reader.pageIndex}`);
+
+  // And the setting really moves that distance.
+  const normal = app.reader.swipeDistance;
+  app.reader.settings.swipeDepth = 'shallow';
+  const shallow = app.reader.swipeDistance;
+  app.reader.settings.swipeDepth = 'deep';
+  const deep = app.reader.swipeDistance;
+  app.reader.settings.swipeDepth = 'normal';
+  check('スワイプの深さを変えられる', shallow < normal && normal < deep,
+        `浅 ${Math.round(shallow)} / 中 ${Math.round(normal)} / 深 ${Math.round(deep)}`);
 
   // Clicks are ignored for a moment after a touch -- that is what swallows
   // iOS's synthetic click -- so the mouse-driven checks have to wait it out.
