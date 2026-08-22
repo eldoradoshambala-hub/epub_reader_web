@@ -857,9 +857,13 @@ export class Reader {
     hint.classList.toggle('armed', progress >= 1);
     hint.classList.add('showing');
     hint.style.width = `${width}px`;
-    // Straight from the gesture, with no animation in between: the shadow is
-    // as dark as the movement is far along.
-    hint.style.opacity = String(0.45 + progress * 0.55);
+    // The animation is turned off through the element's own style rather than
+    // by swapping a class. Changing the transition and the value it governs in
+    // one go leaves it to the browser to decide which transition applies, and
+    // Safari decides differently from Chromium -- which is how a shadow that
+    // was measurably being drawn stayed invisible on the phone.
+    hint.style.transition = 'none';
+    hint.style.opacity = String(0.3 + progress * 0.7);
   }
 
   /* Whether what is behind the hint is dark. Pictures sit on the manga
@@ -880,8 +884,11 @@ export class Reader {
   _clearTurn() {
     const hint = this.turnHint;
     if (!hint) return;
-    // Dropping 'showing' puts the transition back, so this one fades.
+    // Restoring the stylesheet's transition lets this one fade rather than
+    // snap: a shadow that vanishes between two frames reads as a flash, which
+    // is the thing being avoided.
     hint.classList.remove('showing', 'armed');
+    hint.style.transition = '';
     hint.style.opacity = '0';
     hint.style.width = '0px';
   }

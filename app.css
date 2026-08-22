@@ -149,26 +149,24 @@ button {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
   will-change: opacity;
-  /* Only for fading out. Fading in was the mistake: 0.18s is most of a quick
-     swipe, so the shadow was still on its way up when the finger lifted and
-     the hint was never actually seen. While the finger is down the opacity is
-     written straight from how far it has travelled. */
-  transition: opacity 0.16s ease;
+  /* Only for fading out; while the finger is down the opacity is written
+     straight from how far it has travelled, with the transition switched off
+     through the element's own style. Fading in was the mistake -- most of a
+     quick swipe is over before a fade finishes. */
+  transition: opacity 0.28s ease-out, width 0.28s ease-out;
 }
-
-.turn-hint.showing { transition: none; }
 
 .turn-hint.from-right {
   right: var(--safe-right);
   background: linear-gradient(to left,
-    rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0));
+    rgba(60, 46, 28, 0.16), rgba(60, 46, 28, 0.05) 55%, rgba(60, 46, 28, 0));
   border-right: 0 solid var(--accent);
 }
 
 .turn-hint.from-left {
   left: var(--safe-left);
   background: linear-gradient(to right,
-    rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0));
+    rgba(60, 46, 28, 0.16), rgba(60, 46, 28, 0.05) 55%, rgba(60, 46, 28, 0));
   border-left: 0 solid var(--accent);
 }
 
@@ -179,12 +177,12 @@ button {
    there the paper catches the light instead of casting it. */
 .turn-hint.on-dark.from-right {
   background: linear-gradient(to left,
-    rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0));
+    rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0));
 }
 
 .turn-hint.on-dark.from-left {
   background: linear-gradient(to right,
-    rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0));
+    rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0));
 }
 
 /* -- top and bottom bars, shown on a tap in the middle -------------------- */

@@ -918,9 +918,11 @@ class App {
     this.reader._trackTurn(this.reader.swipeDistance * 0.8);
     const style = getComputedStyle(hint);
     const box = hint.getBoundingClientRect();
+    // Both numbers, because they disagreeing is itself the finding: the value
+    // the reader asked for, and the one the browser settled on.
     const out = `幅 ${Math.round(box.width)} 高 ${Math.round(box.height)}`
-      + ` 不透明度 ${style.opacity} z ${style.zIndex}`
-      + ` 表示 ${style.display}/${style.visibility}`;
+      + ` 不透明度 ${style.opacity}(指示 ${hint.style.opacity || '-'})`
+      + ` z ${style.zIndex} 表示 ${style.display}/${style.visibility}`;
     this.reader._clearTurn();
     this.reader.settings.swipeHint = was;
     return out;
