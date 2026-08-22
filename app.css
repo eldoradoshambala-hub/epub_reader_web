@@ -88,6 +88,7 @@ button {
 
 #reader iframe {
   position: absolute;
+  z-index: 0;
   display: block;
   border: 0;
   margin: 0;
@@ -102,6 +103,7 @@ button {
 .fixed-layer {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -134,26 +136,33 @@ button {
 
 .turn-hint {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: var(--safe-top);
+  bottom: var(--safe-bottom);
   width: 0;
   opacity: 0;
   pointer-events: none;
-  z-index: 10;
+  z-index: 15;
+  /* A layer of its own. Without it WebKit paints the iframe's layer on top of
+     this one and the hint is simply never seen, however high its z-index. The
+     element is a sliver of the screen, so promoting it costs nothing -- unlike
+     promoting a chapter, which is what must never be done. */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: opacity;
   transition: opacity 0.18s ease;
 }
 
 .turn-hint.showing { opacity: 1; }
 
 .turn-hint.from-right {
-  right: 0;
+  right: var(--safe-right);
   background: linear-gradient(to left,
     rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0));
   border-right: 0 solid var(--accent);
 }
 
 .turn-hint.from-left {
-  left: 0;
+  left: var(--safe-left);
   background: linear-gradient(to right,
     rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0));
   border-left: 0 solid var(--accent);

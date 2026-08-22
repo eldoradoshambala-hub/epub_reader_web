@@ -899,11 +899,31 @@ class App {
       `ページ送り ${this.settings.pageAnimation ? 'スライド' : '即時'} / 表示 ${this.settings.spreadMode}`,
       `ジャンル別表示 ${JSON.stringify(this.settings.spreadByGenre)} (いま ${this.activeGenre})`,
       `スワイプ 必要 ${Math.round(this.reader.swipeDistance)}px (${this.settings.swipeDepth})`,
+      `影 追従 ${this.reader.turnTracks} 回 / 設定 ${this.settings.swipeHint || 'なし'}`,
+      `影 ${this.hintState()}`,
       `SW ${navigator.serviceWorker && navigator.serviceWorker.controller ? '有効' : 'なし'}`,
     ].filter(Boolean);
     el('diagnosis').textContent = lines.join('\n');
     el('diagnosis').hidden = false;
     el('btn-copy-diagnosis').hidden = false;
+  }
+
+  /* What the hint actually computes to, asked of the browser rather than
+     assumed. Drives it through one step of a swipe and reads the result. */
+  hintState() {
+    const hint = el('turn-hint');
+    if (!hint) return '要素なし';
+    const was = this.reader.settings.swipeHint;
+    this.reader.settings.swipeHint = 'on';
+    this.reader._trackTurn(this.reader.swipeDistance * 0.8);
+    const style = getComputedStyle(hint);
+    const box = hint.getBoundingClientRect();
+    const out = `幅 ${Math.round(box.width)} 高 ${Math.round(box.height)}`
+      + ` 不透明度 ${style.opacity} z ${style.zIndex}`
+      + ` 表示 ${style.display}/${style.visibility}`;
+    this.reader._clearTurn();
+    this.reader.settings.swipeHint = was;
+    return out;
   }
 
   async refreshStorageNote() {

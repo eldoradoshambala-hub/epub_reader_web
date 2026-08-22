@@ -25,11 +25,15 @@
     <iframe class="pane-lead" title="本文"></iframe>
     <iframe class="pane-facing" title="本文（対向ページ）" hidden></iframe>
     <div class="fixed-layer" hidden></div>
-    <!-- Follows the finger during a swipe. It sits in the shell, over the
-         panes: the page itself must not move, because dragging a chapter that
-         is thousands of pixels wide is what iOS cannot composite. -->
-    <div class="turn-hint" id="turn-hint"></div>
   </div>
+  <!-- Follows the finger during a swipe. It sits in the shell, over the panes:
+       the page itself must not move, because dragging a chapter that is
+       thousands of pixels wide is what iOS cannot composite.
+
+       Outside the stage rather than inside it, because WebKit gives an iframe
+       a compositing layer of its own and will paint it over a plain sibling
+       whatever the z-index says. -->
+  <div class="turn-hint" id="turn-hint"></div>
 </div>
 
 <div class="bar top away" id="bar-top">

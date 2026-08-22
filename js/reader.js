@@ -70,6 +70,7 @@ export class Reader {
     ];
     this.fixedLayer = root.querySelector('.fixed-layer');
     this.turnHint = root.querySelector('.turn-hint');
+    this.turnTracks = 0;
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS);
     this.baseCss = options.baseCss || '';
@@ -841,6 +842,9 @@ export class Reader {
      white page. A shadow on the edge the page is travelling towards conveys
      the same thing and cannot disturb the text. */
   _trackTurn(dx) {
+    // Counted before the setting is consulted, so the diagnosis can tell a
+    // gesture that never arrives from a hint that never shows.
+    this.turnTracks = (this.turnTracks || 0) + 1;
     const hint = this.turnHint;
     if (!hint || this.settings.swipeHint !== 'on') return;
     const needed = this.swipeDistance;
