@@ -46,9 +46,29 @@ const TAP_SLOP = 12;            // px of movement still counted as a tap
    bends under the finger and goes over somewhere past the middle of the
    movement, so the distance is taken from the screen and the middle setting
    sits near a third of it -- about where the hand expects the paper to give. */
-const SWIPE_SHARES = { shallow: 0.16, normal: 0.32, deep: 0.5 };
+/* A share of the width, and a ceiling to go with it.
+
+   The share alone was wrong on a tablet. A hand does not open wider because
+   the screen did: a flick is much the same movement on any device, and a
+   third of an iPad is a sweep, not a flick. Each depth therefore carries its
+   own ceiling, so the setting means the same gesture on both.
+
+   iPhone (390px) and iPad (1194px), in px:
+     とても浅い   44 /  95      ふつう      125 / 180
+     浅め         62 / 130      深め        195 / 260 */
+const SWIPE_STEPS = {
+  brief:   { share: 0.08, cap: 90 },
+  shallow: { share: 0.16, cap: 130 },
+  normal:  { share: 0.32, cap: 180 },
+  deep:    { share: 0.50, cap: 260 },
+};
 const SWIPE_MIN = 44;           // never ask for less than a deliberate flick
-const SWIPE_MAX = 300;          // nor for a sweep across a tablet
+
+/* A flick counts on its own terms. Distance alone means a quick, small
+   movement of the thumb does nothing, however clearly it was a page turn --
+   and on a large screen that is the movement the hand actually makes. Past
+   this speed the distance asked for is only the minimum above. */
+const FLICK_SPEED = 0.75;       // px per millisecond
 
 /* Resolves when a picture can be painted -- or after a moment, whatever
    happened. A corrupt image rejects decode(), and waiting on it for ever would
@@ -895,20 +915,27 @@ export class Reader {
 
   /** How far a finger must travel, on this screen, to turn the page. */
   get swipeDistance() {
-    const share = SWIPE_SHARES[this.settings.swipeDepth] || SWIPE_SHARES.normal;
-    const width = window.innerWidth || 320;
-    return Math.max(SWIPE_MIN, Math.min(width * share, SWIPE_MAX));
+    return this.swipeDistanceFor(window.innerWidth || 320);
+  }
+
+  /* Split out from the getter so the figures can be checked for a screen the
+     test is not actually running on. */
+  swipeDistanceFor(width, depth) {
+    const step = SWIPE_STEPS[depth || this.settings.swipeDepth] || SWIPE_STEPS.normal;
+    return Math.max(SWIPE_MIN, Math.min(width * step.share, step.cap));
   }
 
   _attachTouch(target, paneEl) {
     let startX = 0;
     let startY = 0;
+    let startAt = 0;
     let moved = false;
 
     target.addEventListener('touchstart', (e) => {
       const touch = e.changedTouches[0];
       startX = touch.clientX;
       startY = touch.clientY;
+      startAt = Date.now();
       moved = false;
     }, { passive: true });
 
@@ -938,7 +965,10 @@ export class Reader {
         this._handleTap(touch.clientX, e.target, paneEl);
         return;
       }
-      if (Math.abs(dx) > this.swipeDistance && Math.abs(dx) > Math.abs(dy)) {
+      const speed = Math.abs(dx) / Math.max(1, Date.now() - startAt);
+      const far = Math.abs(dx) > this.swipeDistance;
+      const flicked = speed >= FLICK_SPEED && Math.abs(dx) >= SWIPE_MIN;
+      if ((far || flicked) && Math.abs(dx) > Math.abs(dy)) {
         // A swipe turns the page the way a hand does. In a right-bound book
         // the next page is the one lying on the left, so it is lifted and
         // carried rightward -- the finger travels left to right. A left-bound

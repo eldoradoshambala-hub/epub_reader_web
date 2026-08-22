@@ -17,7 +17,7 @@ const settle = () => wait(450);
 /* A swipe, as the screen sees one: a real touch sequence inside the chapter,
    so it travels the same path a finger does -- through the tap test, the slop
    test, and then the direction test. Calling next() would prove nothing. */
-function swipe(dx, from) {
+async function swipe(dx, from, ms = 300) {
   const app = window.app;
   const frame = app.reader.frames[0];
   const doc = app.reader.paneDoc(frame);
@@ -34,6 +34,7 @@ function swipe(dx, from) {
   }));
 
   send('touchstart', from);
+  await wait(Math.max(0, ms - 10));
   send('touchmove', from + dx / 2);
   send('touchend', from + dx);
 }
@@ -339,13 +340,13 @@ export async function run() {
   // rightward, so the finger travels left to right.
   const swipeStart = app.reader.pageIndex;
   const reach = Math.ceil(app.reader.swipeDistance) + 30;
-  swipe(+reach);
+  await swipe(+reach);
   await settle();
   const afterSwipeForward = app.reader.pageIndex;
   check('左から右へのスワイプで進む', afterSwipeForward > swipeStart,
         `${swipeStart} -> ${afterSwipeForward}`);
 
-  swipe(-reach);
+  await swipe(-reach);
   await settle();
   check('右から左へのスワイプで戻る', app.reader.pageIndex === swipeStart,
         `${afterSwipeForward} -> ${app.reader.pageIndex}`);
@@ -353,7 +354,7 @@ export async function run() {
   // Between the two thresholds -- too far to be a tap, too short to be a
   // swipe -- nothing should happen at all.
   const beforeSmall = app.reader.pageIndex;
-  swipe(+25, 170);
+  await swipe(+25, 170);
   await settle();
   check('中途半端な指の動きでは何も起きない', app.reader.pageIndex === beforeSmall,
         `${beforeSmall} -> ${app.reader.pageIndex}`);
@@ -361,20 +362,46 @@ export async function run() {
   // The old fixed threshold was 45px, which is a twitch. A swipe that short
   // must no longer be enough on a phone-sized screen.
   const beforeShort = app.reader.pageIndex;
-  swipe(+50, 120);
+  await swipe(+50, 120);
   await settle();
   check('45px 程度の短いスワイプでは変わらない', app.reader.pageIndex === beforeShort,
         `必要 ${Math.round(app.reader.swipeDistance)}px / ${beforeShort} -> ${app.reader.pageIndex}`);
 
-  // And the setting really moves that distance.
-  const normal = app.reader.swipeDistance;
-  app.reader.settings.swipeDepth = 'shallow';
-  const shallow = app.reader.swipeDistance;
-  app.reader.settings.swipeDepth = 'deep';
-  const deep = app.reader.swipeDistance;
-  app.reader.settings.swipeDepth = 'normal';
-  check('スワイプの深さを変えられる', shallow < normal && normal < deep,
-        `浅 ${Math.round(shallow)} / 中 ${Math.round(normal)} / 深 ${Math.round(deep)}`);
+  // The setting really moves that distance, on this screen and on a tablet.
+  const at = (width, depth) => Math.round(app.reader.swipeDistanceFor(width, depth));
+  const steps = ['brief', 'shallow', 'normal', 'deep'];
+  const phone = steps.map((d) => at(390, d));
+  const tablet = steps.map((d) => at(1194, d));
+  const rising = (list) => list.every((v, i) => i === 0 || v >= list[i - 1]);
+
+  check('スワイプの深さを変えられる', rising(phone) && phone[0] < phone[3],
+        `iPhone ${phone.join(' / ')}`);
+  // The whole point of the ceilings: a tablet must not ask for a sweep, and
+  // the four steps must stay distinct rather than all hitting the same limit.
+  check('iPad でも指を大きく動かさずに済む',
+        tablet[3] <= 260 && rising(tablet) && new Set(tablet).size === 4,
+        `iPad ${tablet.join(' / ')}`);
+  check('いちばん浅い設定は指先で届く', tablet[0] <= 100 && phone[0] <= 60,
+        `iPhone ${phone[0]} / iPad ${tablet[0]}`);
+
+  // Short but fast: the movement a thumb makes on a large screen. It should
+  // turn the page even though it never reaches the distance asked for.
+  const beforeFlick = app.reader.pageIndex;
+  await swipe(+60, 120, 40);
+  await settle();
+  check('短くても素早く払えばページが変わる', app.reader.pageIndex !== beforeFlick,
+        `60px を 40ms で / ${beforeFlick} -> ${app.reader.pageIndex}`);
+
+  // The same distance taken slowly is not a flick and must still do nothing.
+  const beforeSlow = app.reader.pageIndex;
+  await swipe(-60, 300, 600);
+  await settle();
+  check('同じ距離でもゆっくりなら変わらない', app.reader.pageIndex === beforeSlow,
+        `60px を 600ms で / ${beforeSlow} -> ${app.reader.pageIndex}`);
+
+  // Put the page back where the tap checks below expect to find it.
+  app.reader.goToPage(afterForward, false);
+  await settle();
 
   // Clicks are ignored for a moment after a touch -- that is what swallows
   // iOS's synthetic click -- so the mouse-driven checks have to wait it out.
