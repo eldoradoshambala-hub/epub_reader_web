@@ -25,6 +25,10 @@
     <iframe class="pane-lead" title="本文"></iframe>
     <iframe class="pane-facing" title="本文（対向ページ）" hidden></iframe>
     <div class="fixed-layer" hidden></div>
+    <!-- Follows the finger during a swipe. It sits in the shell, over the
+         panes: the page itself must not move, because dragging a chapter that
+         is thousands of pixels wide is what iOS cannot composite. -->
+    <div class="turn-hint" id="turn-hint"></div>
   </div>
 </div>
 
@@ -319,6 +323,16 @@
       スライドさせると、iPhone では表示が乱れたり白紙になることがあります。
       おかしい時は「すぐ切り替える」に戻して下さい。
     </p>
+
+    <div class="field">
+      <label for="set-swipeHint">スワイプ中の表示</label>
+      <div class="control">
+        <select id="set-swipeHint">
+          <option value="on">紙の影を出す</option>
+          <option value="">出さない</option>
+        </select>
+      </div>
+    </div>
 
     <div class="field">
       <label for="set-swipeDepth">スワイプの深さ</label>

@@ -84,6 +84,7 @@ class App {
   constructor(library, baseCss) {
     this.library = library;
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loadSettings());
+    this.normaliseSpreadModes();
     this.record = null;         // shelf entry of the open book
     this.editingShelf = false;
     this.folderId = null;       // which folder the shelf is showing
@@ -541,12 +542,13 @@ class App {
       if (!file) throw new Error('本のデータが見つかりません');
       const book = await Epub.open(file, record.fileName);
       const at = (await this.library.positionFor(record.id)) || {};
+      this.record = record;
+      await this.applySpreadForBook();
       await this.view.open(book, {
         spineIndex: at.spineIndex || 0,
         page: at.page || 0,
         ratio: typeof at.ratio === 'number' ? at.ratio : null,
       });
-      this.record = record;
       localStorage.setItem(LAST_BOOK_KEY, record.id);
       el('book-title').textContent = book.metadata.title || record.fileName;
       this.buildContents(book);
@@ -706,17 +708,54 @@ class App {
 
   /* -- page display -------------------------------------------------------- */
 
+  /* Page display is remembered per genre, not for the app as a whole. Manga
+     wants a spread and a novel usually does not, and on a tablet large enough
+     for both the one setting was being pushed back and forth all day.
+
+     An installation that predates this inherits whatever single mode it was
+     using, so nothing changes underfoot. */
+  normaliseSpreadModes() {
+    const saved = this.settings.spreadByGenre;
+    const modes = { novel: 'auto', manga: 'auto', other: 'auto' };
+    for (const key of Object.keys(modes)) {
+      if (saved && saved[key]) modes[key] = saved[key];
+      else if (!saved && this.settings.spreadMode) modes[key] = this.settings.spreadMode;
+    }
+    this.settings.spreadByGenre = modes;
+  }
+
+  /** The genre whose page display is in force: the open book's, or 'other'. */
+  get activeGenre() {
+    return (this.record && this.record.genre) || 'other';
+  }
+
   async setSpreadMode(mode) {
     this.settings.spreadMode = mode;
+    this.settings.spreadByGenre[this.activeGenre] = mode;
     saveSettings(this.settings);
     this.syncSpreadButtons();
     await this.reader.configure(this.settings);
     await this.view.applySpreadMode();
+    if (this.record) {
+      const label = { novel: '小説', manga: '漫画', other: 'その他' }[this.activeGenre];
+      toast(`${label}のページ表示として憶えました`);
+    }
   }
 
-  syncSpreadButtons() {
+  /** Put the open book's genre in charge of the page display. */
+  async applySpreadForBook() {
+    const wanted = this.settings.spreadByGenre[this.activeGenre] || 'auto';
+    this.syncSpreadButtons(wanted);
+    if (wanted === this.settings.spreadMode) return;
+    this.settings.spreadMode = wanted;
+    saveSettings(this.settings);
+    await this.reader.configure(this.settings);
+  }
+
+  syncSpreadButtons(mode) {
+    const wanted = mode || this.settings.spreadMode;
     for (const button of el('spread-modes').querySelectorAll('button')) {
-      button.setAttribute('aria-pressed', String(button.dataset.mode === this.settings.spreadMode));
+      button.setAttribute('aria-pressed', String(button.dataset.mode === wanted));
     }
   }
 
@@ -793,7 +832,10 @@ class App {
 
   resetSettings() {
     const keepSpread = this.settings.spreadMode;
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, { spreadMode: keepSpread });
+    const keepByGenre = this.settings.spreadByGenre;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, {
+      spreadMode: keepSpread, spreadByGenre: keepByGenre,
+    });
     saveSettings(this.settings);
     this.syncSettingsForm();
     this.applyPageColours();
@@ -855,6 +897,8 @@ class App {
       book ? `spine ${this.view.spineIndex + 1}/${book.spine.length} fixed=${book.isFixedLayout} rtl=${book.isRtl}` : '',
       `設定 size=${this.settings.fontSize} line=${this.settings.lineHeight} 余白=${this.settings.marginTop}/${this.settings.marginBottom}/${this.settings.marginLeft}/${this.settings.marginRight}`,
       `ページ送り ${this.settings.pageAnimation ? 'スライド' : '即時'} / 表示 ${this.settings.spreadMode}`,
+      `ジャンル別表示 ${JSON.stringify(this.settings.spreadByGenre)} (いま ${this.activeGenre})`,
+      `スワイプ 必要 ${Math.round(this.reader.swipeDistance)}px (${this.settings.swipeDepth})`,
       `SW ${navigator.serviceWorker && navigator.serviceWorker.controller ? '有効' : 'なし'}`,
     ].filter(Boolean);
     el('diagnosis').textContent = lines.join('\n');

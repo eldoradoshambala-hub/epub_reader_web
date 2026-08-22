@@ -127,6 +127,53 @@ button {
 .fixed-layer.twin img { max-width: 50%; }
 .fixed-layer.twin.fit-width img { width: 50%; }
 
+/* The paper giving way under the finger. A gradient anchored to the edge the
+   page is being carried towards, widening as the hand travels; once the swipe
+   is far enough to count, the edge firms up to say so. Nothing here touches
+   the panes, so no amount of dragging can disturb the text. */
+
+.turn-hint {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 0.18s ease;
+}
+
+.turn-hint.showing { opacity: 1; }
+
+.turn-hint.from-right {
+  right: 0;
+  background: linear-gradient(to left,
+    rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0));
+  border-right: 0 solid var(--accent);
+}
+
+.turn-hint.from-left {
+  left: 0;
+  background: linear-gradient(to right,
+    rgba(0, 0, 0, 0.30), rgba(0, 0, 0, 0.10) 45%, rgba(0, 0, 0, 0));
+  border-left: 0 solid var(--accent);
+}
+
+.turn-hint.armed.from-right { border-right-width: 3px; }
+.turn-hint.armed.from-left { border-left-width: 3px; }
+
+/* A dark page -- manga, or a night background -- swallows a shadow whole, so
+   there the paper catches the light instead of casting it. */
+.turn-hint.on-dark.from-right {
+  background: linear-gradient(to left,
+    rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0));
+}
+
+.turn-hint.on-dark.from-left {
+  background: linear-gradient(to right,
+    rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 45%, rgba(255, 255, 255, 0));
+}
+
 /* -- top and bottom bars, shown on a tap in the middle -------------------- */
 
 .bar {

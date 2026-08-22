@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
   mangaBackground: '#1c1c1c',
   pageAnimation: false,      // sliding page turns; off by default on a phone
   swipeDepth: 'normal',      // how far a swipe goes before the page turns
+  swipeHint: 'on',           // show the paper giving way under the finger
 };
 
 const XHTML_NS = 'http://www.w3.org/1999/xhtml';
@@ -68,6 +69,7 @@ export class Reader {
       root.querySelector('.pane-facing'),
     ];
     this.fixedLayer = root.querySelector('.fixed-layer');
+    this.turnHint = root.querySelector('.turn-hint');
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS);
     this.baseCss = options.baseCss || '';
@@ -831,6 +833,50 @@ export class Reader {
     else this.onTapMiddle();
   }
 
+  /* The paper bending under the finger.
+
+     Only the shell moves. Dragging the chapter itself would be the honest
+     simulation, but a vertical chapter is a strip thousands of pixels wide,
+     and asking iOS to composite that is what left the reader showing a blank
+     white page. A shadow on the edge the page is travelling towards conveys
+     the same thing and cannot disturb the text. */
+  _trackTurn(dx) {
+    const hint = this.turnHint;
+    if (!hint || this.settings.swipeHint !== 'on') return;
+    const needed = this.swipeDistance;
+    const progress = Math.min(1, Math.abs(dx) / needed);
+    const width = Math.round(progress * Math.min(needed * 0.7, 120));
+
+    hint.classList.toggle('on-dark', this._pageIsDark());
+    hint.classList.toggle('from-right', dx > 0);
+    hint.classList.toggle('from-left', dx < 0);
+    hint.classList.toggle('armed', progress >= 1);
+    hint.classList.add('showing');
+    hint.style.width = `${width}px`;
+  }
+
+  /* Whether what is behind the hint is dark. Pictures sit on the manga
+     background; text sits on whichever page colour was chosen. */
+  _pageIsDark() {
+    const colour = this.mode === 'fixed'
+      ? this.settings.mangaBackground
+      : this.settings.backgroundColor;
+    const hex = String(colour || '').trim();
+    const match = /^#?([0-9a-f]{6})$/i.exec(hex);
+    if (!match) return false;
+    const value = parseInt(match[1], 16);
+    const r = (value >> 16) & 255, g = (value >> 8) & 255, b = value & 255;
+    // Rough perceived brightness; the exact curve does not matter here.
+    return (r * 0.299 + g * 0.587 + b * 0.114) < 128;
+  }
+
+  _clearTurn() {
+    const hint = this.turnHint;
+    if (!hint) return;
+    hint.classList.remove('showing', 'armed');
+    hint.style.width = '0px';
+  }
+
   /** How far a finger must travel, on this screen, to turn the page. */
   get swipeDistance() {
     const share = SWIPE_SHARES[this.settings.swipeDepth] || SWIPE_SHARES.normal;
@@ -852,9 +898,16 @@ export class Reader {
 
     target.addEventListener('touchmove', (e) => {
       const touch = e.changedTouches[0];
-      if (Math.abs(touch.clientX - startX) > TAP_SLOP
-       || Math.abs(touch.clientY - startY) > TAP_SLOP) moved = true;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      if (Math.abs(dx) > TAP_SLOP || Math.abs(dy) > TAP_SLOP) moved = true;
+      // Only for a sideways drag: a finger going up the screen is not turning
+      // a page and should not make the paper look as though it is.
+      if (moved && Math.abs(dx) > Math.abs(dy)) this._trackTurn(dx);
+      else this._clearTurn();
     }, { passive: true });
+
+    target.addEventListener('touchcancel', () => this._clearTurn(), { passive: true });
 
     target.addEventListener('touchend', (e) => {
       // iOS sends a click of its own after a tap. Both would be handled, and
@@ -864,6 +917,7 @@ export class Reader {
       const touch = e.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
+      this._clearTurn();
       if (!moved) {
         this._handleTap(touch.clientX, e.target, paneEl);
         return;

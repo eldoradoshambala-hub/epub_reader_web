@@ -38,6 +38,27 @@ function swipe(dx, from) {
   send('touchend', from + dx);
 }
 
+/* Hold a swipe part-way through, so what the screen shows mid-gesture can be
+   looked at. Returns a function that finishes or abandons the gesture. */
+function swipeHold(dx) {
+  const app = window.app;
+  const frame = app.reader.frames[0];
+  const doc = app.reader.paneDoc(frame);
+  const target = doc.body;
+  const y = 400;
+  const from = dx > 0 ? 60 : 340;
+  const touchAt = (x) => new Touch({
+    identifier: 1, target, clientX: x, clientY: y, pageX: x, pageY: y,
+  });
+  const send = (type, x) => target.dispatchEvent(new TouchEvent(type, {
+    bubbles: true, cancelable: true,
+    changedTouches: [touchAt(x)], touches: type === 'touchend' ? [] : [touchAt(x)],
+  }));
+  send('touchstart', from);
+  send('touchmove', from + dx);
+  return () => send('touchend', from + dx);
+}
+
 function tapAt(fraction) {
   const app = window.app;
   const frame = app.reader.frames[0];
@@ -127,6 +148,104 @@ async function shelfChecks(check) {
         cover ? `${Math.round(cover.size / 1024)} KB` : 'なし');
 
   closeSheetIfOpen('library');
+}
+
+/* Page display is kept per genre. Setting it while a manga is open must not
+   reach the novels, and opening a book must put its own genre in charge. */
+async function checkSpreadByGenre(check) {
+  const app = window.app;
+  const books = await app.library.list();
+  const manga = books.find((b) => b.fileName.includes('manga_fixed'));
+  const novel = books.find((b) => !b.fileName.includes('manga_fixed'));
+  if (!manga || !novel) {
+    check('ページ表示をジャンルごとに憶える', true, '本が足りず省略');
+    return;
+  }
+  await app.library.update(manga.id, { genre: 'manga' });
+  await app.library.update(novel.id, { genre: 'novel' });
+  manga.genre = 'manga';
+  novel.genre = 'novel';
+
+  await app.openRecord(novel);
+  await settle();
+  await app.setSpreadMode('single');
+  await settle();
+  const novelMode = app.settings.spreadByGenre.novel;
+
+  await app.openRecord(manga);
+  await settle();
+  await app.setSpreadMode('double');
+  await settle();
+
+  check('漫画の設定が小説を書き換えない',
+        app.settings.spreadByGenre.novel === novelMode
+        && app.settings.spreadByGenre.manga === 'double',
+        JSON.stringify(app.settings.spreadByGenre));
+
+  await app.openRecord(novel);
+  await settle();
+  check('本を開くとそのジャンルの設定になる', app.settings.spreadMode === novelMode,
+        `${app.settings.spreadMode} / 期待 ${novelMode}`);
+
+  const pressed = document.querySelector('#spread-modes button[aria-pressed="true"]');
+  check('ボタンの表示も切り替わる', pressed && pressed.dataset.mode === novelMode,
+        pressed ? pressed.dataset.mode : 'なし');
+}
+
+/* The hint that follows the finger: it should appear on the edge the page is
+   being carried towards, grow with the movement, and say when the swipe has
+   gone far enough. And it must leave nothing behind once the finger lifts. */
+async function checkTurnHint(check) {
+  const app = window.app;
+  const hint = document.getElementById('turn-hint');
+  const reach = Math.ceil(app.reader.swipeDistance);
+
+  let finish = swipeHold(Math.round(reach * 0.4));
+  await wait(120);
+  const partial = {
+    showing: hint.classList.contains('showing'),
+    side: hint.classList.contains('from-right') ? 'right' : 'left',
+    armed: hint.classList.contains('armed'),
+    width: parseFloat(hint.style.width) || 0,
+  };
+  finish();
+  await wait(120);
+  const afterLift = hint.classList.contains('showing');
+
+  finish = swipeHold(reach + 40);
+  await wait(120);
+  const full = {
+    armed: hint.classList.contains('armed'),
+    width: parseFloat(hint.style.width) || 0,
+  };
+  finish();
+  await settle();
+
+  check('スワイプ中に紙の影が出る',
+        partial.showing && partial.width > 0 && partial.side === 'right',
+        `幅 ${partial.width}px / ${partial.side} 側`);
+  check('影は指の動きに従って育つ', full.width > partial.width,
+        `${partial.width}px -> ${full.width}px`);
+  check('必要な距離に届くと合図が変わる', !partial.armed && full.armed,
+        `途中 ${partial.armed} / 到達 ${full.armed}`);
+  check('指を離すと影は消える', !afterLift);
+
+  // A shadow is invisible on a dark page, so it has to turn into a highlight.
+  // The reader keeps its own copy of the settings, which is the one it reads.
+  const wasBackground = app.reader.settings.backgroundColor;
+  app.reader.settings.backgroundColor = '#12161c';
+  const dark = swipeHold(Math.round(reach * 0.6));
+  await wait(120);
+  const onDark = hint.classList.contains('on-dark');
+  dark();
+  app.reader.settings.backgroundColor = wasBackground;
+  const light = swipeHold(Math.round(reach * 0.6));
+  await wait(120);
+  const onLight = hint.classList.contains('on-dark');
+  light();
+  await settle();
+  check('暗い背景では影ではなく光になる', onDark && !onLight,
+        `暗 ${onDark} / 明 ${onLight}`);
 }
 
 /* Turning a page in a picture book must never leave the layer showing its own
@@ -365,6 +484,8 @@ export async function run() {
 
   check('章のページ数が測れている', startPages > 0, String(startPages));
 
+  await checkTurnHint(check);
+  await checkSpreadByGenre(check);
   await checkPictureTurns(check);
   await shelfChecks(check);
 
