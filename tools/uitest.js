@@ -200,23 +200,26 @@ async function checkTurnHint(check) {
   const hint = document.getElementById('turn-hint');
   const reach = Math.ceil(app.reader.swipeDistance);
 
+  // Measured with no pause at all. A quick swipe is over in a fraction of a
+  // second, so anything that needs time to appear does not appear: reading
+  // this immediately is the only honest test of what a real flick shows.
   let finish = swipeHold(Math.round(reach * 0.4));
-  await wait(120);
   const partial = {
     showing: hint.classList.contains('showing'),
     side: hint.classList.contains('from-right') ? 'right' : 'left',
     armed: hint.classList.contains('armed'),
     width: parseFloat(hint.style.width) || 0,
+    opacity: parseFloat(getComputedStyle(hint).opacity) || 0,
   };
   finish();
   await wait(120);
   const afterLift = hint.classList.contains('showing');
 
   finish = swipeHold(reach + 40);
-  await wait(120);
   const full = {
     armed: hint.classList.contains('armed'),
     width: parseFloat(hint.style.width) || 0,
+    opacity: parseFloat(getComputedStyle(hint).opacity) || 0,
   };
   finish();
   await settle();
@@ -224,6 +227,10 @@ async function checkTurnHint(check) {
   check('スワイプ中に紙の影が出る',
         partial.showing && partial.width > 0 && partial.side === 'right',
         `幅 ${partial.width}px / ${partial.side} 側`);
+  check('影はすぐ濃くなる（待たずに見える）', partial.opacity > 0.3,
+        `不透明度 ${partial.opacity}`);
+  check('影は指が進むほど濃くなる', full.opacity > partial.opacity,
+        `${partial.opacity} -> ${full.opacity}`);
   check('影は指の動きに従って育つ', full.width > partial.width,
         `${partial.width}px -> ${full.width}px`);
   check('必要な距離に届くと合図が変わる', !partial.armed && full.armed,

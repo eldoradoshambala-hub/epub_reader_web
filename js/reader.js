@@ -857,6 +857,9 @@ export class Reader {
     hint.classList.toggle('armed', progress >= 1);
     hint.classList.add('showing');
     hint.style.width = `${width}px`;
+    // Straight from the gesture, with no animation in between: the shadow is
+    // as dark as the movement is far along.
+    hint.style.opacity = String(0.45 + progress * 0.55);
   }
 
   /* Whether what is behind the hint is dark. Pictures sit on the manga
@@ -877,7 +880,9 @@ export class Reader {
   _clearTurn() {
     const hint = this.turnHint;
     if (!hint) return;
+    // Dropping 'showing' puts the transition back, so this one fades.
     hint.classList.remove('showing', 'armed');
+    hint.style.opacity = '0';
     hint.style.width = '0px';
   }
 

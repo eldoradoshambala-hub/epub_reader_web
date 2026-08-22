@@ -149,10 +149,14 @@ button {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
   will-change: opacity;
-  transition: opacity 0.18s ease;
+  /* Only for fading out. Fading in was the mistake: 0.18s is most of a quick
+     swipe, so the shadow was still on its way up when the finger lifted and
+     the hint was never actually seen. While the finger is down the opacity is
+     written straight from how far it has travelled. */
+  transition: opacity 0.16s ease;
 }
 
-.turn-hint.showing { opacity: 1; }
+.turn-hint.showing { transition: none; }
 
 .turn-hint.from-right {
   right: var(--safe-right);
