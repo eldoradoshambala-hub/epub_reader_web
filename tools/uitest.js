@@ -105,6 +105,50 @@ async function shelfChecks(check) {
   closeSheetIfOpen('library');
 }
 
+/* Turning a page in a picture book must never leave the layer showing its own
+   background. That gap was the black flash between manga pages: the old
+   picture was taken away before the new one could be painted. Watch the layer
+   itself rather than trusting the code that fills it. */
+async function checkPictureTurns(check) {
+  const app = window.app;
+  const books = await app.library.list();
+  const manga = books.find((b) => b.fileName.includes('manga_fixed'));
+  if (!manga) { check('画像ページの切り替えで黒画面が出ない', true, '固定レイアウトの本なし（省略）'); return; }
+
+  await app.openRecord(manga);
+  await settle();
+  if (app.reader.mode !== 'fixed') {
+    check('画像ページの切り替えで黒画面が出ない', true, '固定レイアウトとして開かず（省略）');
+    return;
+  }
+
+  const layer = document.querySelector('.fixed-layer');
+  let unpaintable = 0;
+  const observer = new MutationObserver(() => {
+    const kids = Array.from(layer.children);
+    if (!kids.length || !kids.every((i) => i.complete && i.naturalWidth > 0)) unpaintable++;
+  });
+  observer.observe(layer, { childList: true });
+
+  let blankFrames = 0;
+  let watching = true;
+  const watch = () => {
+    if (!watching) return;
+    const kids = Array.from(layer.children);
+    if (!kids.length || !kids.some((i) => i.complete && i.naturalWidth > 0)) blankFrames++;
+    requestAnimationFrame(watch);
+  };
+  requestAnimationFrame(watch);
+
+  const turns = Math.min(8, app.view.views.length - 1);
+  for (let i = 0; i < turns; i++) { app.reader.next(); await wait(300); }
+  watching = false;
+  observer.disconnect();
+
+  check('画像ページの切り替えで黒画面が出ない', unpaintable === 0 && blankFrames === 0,
+        `${turns} 回 / 未描画 ${unpaintable} / 空フレーム ${blankFrames}`);
+}
+
 function closeSheetIfOpen(id) {
   const sheet = document.getElementById(id);
   if (!sheet.hidden) sheet.classList.add('away');
@@ -251,6 +295,7 @@ export async function run() {
 
   check('章のページ数が測れている', startPages > 0, String(startPages));
 
+  await checkPictureTurns(check);
   await shelfChecks(check);
 
   return { passed: results.filter((r) => r.ok).length, total: results.length, results };

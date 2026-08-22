@@ -37,6 +37,16 @@ const MAX_TEXT_NODES = 30000;
 const SWIPE_THRESHOLD = 45;     // px before a drag counts as a page turn
 const TAP_SLOP = 12;            // px of movement still counted as a tap
 
+/* Resolves when a picture can be painted -- or after a moment, whatever
+   happened. A corrupt image rejects decode(), and waiting on it for ever would
+   wedge the page turn that asked for it. */
+function decoded(img) {
+  const ready = img.decode
+    ? img.decode().catch(() => {})
+    : new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+  return Promise.race([ready, new Promise((r) => setTimeout(r, 1500))]);
+}
+
 export class Reader {
   constructor(root, options = {}) {
     this.root = root;
@@ -70,6 +80,8 @@ export class Reader {
     this.pageH = 0;
     this.advance = 0;
 
+    this.fixedToken = 0;
+    this.warmed = new Map();   // recently decoded pictures, kept alive
     this.lastTouchAt = 0;
     this.lastStageW = 0;
     this.lastStageH = 0;
@@ -692,11 +704,30 @@ export class Reader {
 
   // -- fixed layout (pictures) --------------------------------------------
 
-  showFixed(urls, { rtl = true, fit = 'contain' } = {}) {
+  /* Show one or two pictures.
+
+     The page on screen is left alone until the new one is decoded and ready
+     to paint. Swapping first and decoding afterwards leaves a gap in which the
+     layer's own background shows through -- a black flash between every pair
+     of manga pages, barely visible on a fast desktop and very visible on a
+     phone, where decoding a full-size scan takes a moment. */
+  async showFixed(urls, { rtl = true, fit = 'contain' } = {}) {
     this.mode = 'fixed';
     this.spread = false;
     this.pageCount = 1;
     this.pageIndex = 0;
+
+    const token = ++this.fixedToken;
+    const images = urls.map((src) => {
+      const img = document.createElement('img');
+      img.draggable = false;
+      img.alt = '';
+      img.src = src;
+      return img;
+    });
+    await Promise.all(images.map(decoded));
+    if (token !== this.fixedToken) return;   // a newer page turn overtook us
+
     for (const el of this.frames) {
       el.classList.add('loading');
       el.style.clipPath = '';
@@ -711,13 +742,25 @@ export class Reader {
     else if (fit === 'height') classes.push('fit-height');
     this.fixedLayer.className = classes.join(' ');
 
-    this.fixedLayer.replaceChildren(...urls.map((src) => {
-      const img = document.createElement('img');
-      img.draggable = false;
-      img.alt = '';
+    this.fixedLayer.replaceChildren(...images);
+  }
+
+  /* Decode the pictures a reader is about to reach, so that when they get
+     there the swap above costs nothing. The decoded images are held for a
+     while: dropping the last reference invites the browser to throw the
+     decoded form away, which is the cost we are trying to avoid. */
+  prefetchImages(urls) {
+    for (const src of urls) {
+      if (!src || this.warmed.has(src)) continue;
+      const img = new Image();
       img.src = src;
-      return img;
-    }));
+      this.warmed.set(src, img);
+      decoded(img);
+    }
+    // A handful of pages either side is enough; the rest can go.
+    while (this.warmed.size > 8) {
+      this.warmed.delete(this.warmed.keys().next().value);
+    }
   }
 
   // -- settings ------------------------------------------------------------

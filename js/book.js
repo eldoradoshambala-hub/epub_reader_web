@@ -23,7 +23,8 @@ export class BookView {
     this.spread = false;
     this.pair = null;         // two illustration pages shown together
     this.pairOffset = null;   // null = the book's own pairing, else 0/1
-    this.views = [];          // fixed layout: groups of spine indices
+    this.views = [];             // fixed layout: groups of spine indices
+    this.viewToken = 0;          // which page turn owns the screen
     this.viewIndex = 0;
     this.offSpine = null;
     this.weights = { sizes: [], before: [], total: 1 };
@@ -124,7 +125,7 @@ export class BookView {
     this.pair = pair;
     this.offSpine = null;
     this.spineIndex = pair[0];
-    this.reader.showFixed(urls, {
+    await this.reader.showFixed(urls, {
       rtl: this.book.isRtl,
       fit: this.reader.settings.mangaFit,
     });
@@ -134,6 +135,31 @@ export class BookView {
     this.onChapter(this.spineIndex);
     this._emitPosition();
     return true;
+  }
+
+  /* Read ahead. Turning a page is the one moment a reader notices a delay, so
+     the pictures either side of this one are fetched and decoded now, while
+     nothing is waiting on them. */
+  async _warmNeighbours() {
+    const wanted = [this.viewIndex + 1, this.viewIndex - 1, this.viewIndex + 2];
+    const urls = [];
+    for (const at of wanted) {
+      const group = this.views[at];
+      if (!group) continue;
+      for (const index of group) {
+        const item = this.book.spine[index];
+        if (!item) continue;
+        try {
+          const images = await this.book.imagesIn(item.href);
+          if (!images.length) continue;
+          const url = await this.scope.urlFor(images[0]);
+          if (url) urls.push(url);
+        } catch {
+          // A page that will not load is the page turn's problem, not ours.
+        }
+      }
+    }
+    this.reader.prefetchImages(urls);
   }
 
   // -- fixed layout grouping -----------------------------------------------
@@ -188,6 +214,9 @@ export class BookView {
 
   async _showView(viewIndex) {
     if (!this.views.length) return;
+    // Waiting for a picture to decode means two quick taps can be in flight at
+    // once; the later one owns the screen.
+    const token = ++this.viewToken;
     this.viewIndex = Math.max(0, Math.min(viewIndex, this.views.length - 1));
     const group = this.views[this.viewIndex];
     this.spineIndex = group[0];
@@ -203,10 +232,12 @@ export class BookView {
     }
 
     if (urls.length) {
-      this.reader.showFixed(urls, {
+      await this.reader.showFixed(urls, {
         rtl: this.book.isRtl,
         fit: this.reader.settings.mangaFit,
       });
+      if (token !== this.viewToken) return;
+      this._warmNeighbours();
     } else {
       // A fixed-layout page that is markup rather than a single image; fall
       // back to rendering it like a normal chapter.
@@ -219,6 +250,7 @@ export class BookView {
         });
       }
     }
+    if (token !== this.viewToken) return;
     this.page = this.viewIndex;
     this.pages = this.views.length;
     this.spread = group.length > 1;

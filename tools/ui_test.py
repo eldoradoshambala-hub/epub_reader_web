@@ -27,6 +27,10 @@ import * as test from '/tools/uitest.js';
     // Three books: the shelf tests need something to reorder and to file away.
     const first = names.find((n) => n.includes(%(book)s)) || names[0];
     const chosen = [first, ...names.filter((n) => n !== first).slice(0, 2)];
+    // And a picture book, if one is being served: the black-flash check needs
+    // a fixed-layout book and would otherwise quietly skip itself.
+    const picture = names.find((n) => n.includes('manga_fixed'));
+    if (picture && !chosen.includes(picture)) chosen.push(picture);
     const files = [];
     for (const one of chosen) {
       const blob = await (await fetch('/books/' + encodeURIComponent(one))).blob();
