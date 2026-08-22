@@ -13,7 +13,7 @@
 // Bumped on every release. The name is what forces the update: a shell cached
 // under the old name is dropped wholesale when this worker activates, so the
 // next launch gets the new files rather than the ones already on the phone.
-const CACHE = 'reader-shell-v11';
+const CACHE = 'reader-shell-v12';
 
 const SHELL = [
   './',

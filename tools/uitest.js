@@ -39,6 +39,25 @@ async function swipe(dx, from, ms = 300) {
   send('touchend', from + dx);
 }
 
+/* The gesture iOS sometimes reports for a fast flick: a finger down and a
+   finger up, with nothing in between. */
+function flickWithoutMoves(dx, from = 120) {
+  const app = window.app;
+  const frame = app.reader.frames[0];
+  const doc = app.reader.paneDoc(frame);
+  const target = doc.body;
+  const y = 400;
+  const touchAt = (x) => new Touch({
+    identifier: 1, target, clientX: x, clientY: y, pageX: x, pageY: y,
+  });
+  const send = (type, x) => target.dispatchEvent(new TouchEvent(type, {
+    bubbles: true, cancelable: true,
+    changedTouches: [touchAt(x)], touches: type === 'touchend' ? [] : [touchAt(x)],
+  }));
+  send('touchstart', from);
+  send('touchend', from + dx);
+}
+
 /* Hold a swipe part-way through, so what the screen shows mid-gesture can be
    looked at. Returns a function that finishes or abandons the gesture. */
 function swipeHold(dx) {
@@ -398,6 +417,23 @@ export async function run() {
   await settle();
   check('同じ距離でもゆっくりなら変わらない', app.reader.pageIndex === beforeSlow,
         `60px を 600ms で / ${beforeSlow} -> ${app.reader.pageIndex}`);
+
+  // The gesture that arrives with no touchmove: it must be read as a swipe,
+  // not as a tap at wherever the finger came up.
+  const beforeSilent = app.reader.pageIndex;
+  flickWithoutMoves(+90);
+  await settle();
+  check('動きの報告が無い一振りもスワイプとして扱う',
+        app.reader.pageIndex > beforeSilent,
+        `${beforeSilent} -> ${app.reader.pageIndex}`);
+
+  // The shallowest setting has to be comfortably clear of its own thresholds
+  // on a large tablet, which is where it was landing right on them.
+  const briefStep = app.reader.swipeStep('brief');
+  const bigTablet = at(1366, 'brief');
+  check('とても浅い設定は大きな iPad でも余裕がある',
+        bigTablet <= 70 && briefStep.speed <= 0.5,
+        `12.9インチ ${bigTablet}px / 速さ ${briefStep.speed}px/ms`);
 
   // Put the page back where the tap checks below expect to find it.
   app.reader.goToPage(afterForward, false);

@@ -57,18 +57,21 @@ const TAP_SLOP = 12;            // px of movement still counted as a tap
      とても浅い   44 /  95      ふつう      125 / 180
      浅め         62 / 130      深め        195 / 260 */
 const SWIPE_STEPS = {
-  brief:   { share: 0.08, cap: 90 },
-  shallow: { share: 0.16, cap: 130 },
-  normal:  { share: 0.32, cap: 180 },
-  deep:    { share: 0.50, cap: 260 },
+  brief:   { share: 0.06, cap: 60,  floor: 30, speed: 0.40 },
+  shallow: { share: 0.16, cap: 130, floor: 40, speed: 0.55 },
+  normal:  { share: 0.32, cap: 180, floor: 44, speed: 0.75 },
+  deep:    { share: 0.50, cap: 260, floor: 60, speed: 0.95 },
 };
-const SWIPE_MIN = 44;           // never ask for less than a deliberate flick
 
 /* A flick counts on its own terms. Distance alone means a quick, small
    movement of the thumb does nothing, however clearly it was a page turn --
    and on a large screen that is the movement the hand actually makes. Past
-   this speed the distance asked for is only the minimum above. */
-const FLICK_SPEED = 0.75;       // px per millisecond
+   the step's speed, the distance asked for is only its floor.
+
+   Speed belongs to the step for the same reason the ceiling does: someone who
+   has asked for the shallowest setting is making small quick movements, and
+   holding them to the same speed as a deliberate drag put every gesture on
+   the boundary, where it worked or did not by chance. */
 
 /* Resolves when a picture can be painted -- or after a moment, whatever
    happened. A corrupt image rejects decode(), and waiting on it for ever would
@@ -921,8 +924,12 @@ export class Reader {
   /* Split out from the getter so the figures can be checked for a screen the
      test is not actually running on. */
   swipeDistanceFor(width, depth) {
-    const step = SWIPE_STEPS[depth || this.settings.swipeDepth] || SWIPE_STEPS.normal;
-    return Math.max(SWIPE_MIN, Math.min(width * step.share, step.cap));
+    const step = this.swipeStep(depth);
+    return Math.max(step.floor, Math.min(width * step.share, step.cap));
+  }
+
+  swipeStep(depth) {
+    return SWIPE_STEPS[depth || this.settings.swipeDepth] || SWIPE_STEPS.normal;
   }
 
   _attachTouch(target, paneEl) {
@@ -961,13 +968,20 @@ export class Reader {
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
       this._clearTurn();
-      if (!moved) {
+      // A quick flick can arrive with no touchmove at all -- iOS is entitled
+      // to report only where the finger went down and where it came up. Asking
+      // whether any move was seen therefore called those taps, and the page
+      // went forward, backward or nowhere depending on where the finger
+      // happened to lift. Where it ended up is the truth.
+      const travelled = Math.max(Math.abs(dx), Math.abs(dy));
+      if (!moved && travelled <= TAP_SLOP) {
         this._handleTap(touch.clientX, e.target, paneEl);
         return;
       }
+      const step = this.swipeStep();
       const speed = Math.abs(dx) / Math.max(1, Date.now() - startAt);
       const far = Math.abs(dx) > this.swipeDistance;
-      const flicked = speed >= FLICK_SPEED && Math.abs(dx) >= SWIPE_MIN;
+      const flicked = speed >= step.speed && Math.abs(dx) >= step.floor;
       if ((far || flicked) && Math.abs(dx) > Math.abs(dy)) {
         // A swipe turns the page the way a hand does. In a right-bound book
         // the next page is the one lying on the left, so it is lifted and
