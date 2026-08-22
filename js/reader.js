@@ -850,10 +850,16 @@ export class Reader {
         return;
       }
       if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-        // Swiping left drags the page leftward, which is forward in a
-        // right-bound book.
-        const leftward = dx < 0;
-        if (leftward === this.forwardIsLeft) this.next(); else this.prev();
+        // A swipe turns the page the way a hand does. In a right-bound book
+        // the next page is the one lying on the left, so it is lifted and
+        // carried rightward -- the finger travels left to right. A left-bound
+        // book is the mirror of that, which is also how the tap zones work.
+        //
+        // Dragging the text itself, so that the next page slides in from the
+        // side it lives on, is the other reading of a swipe, and it is the
+        // opposite gesture. It belongs to scrolling, not to books.
+        const rightward = dx > 0;
+        if (rightward === this.forwardIsLeft) this.next(); else this.prev();
       }
     }, { passive: true });
   }

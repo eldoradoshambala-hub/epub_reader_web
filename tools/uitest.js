@@ -14,6 +14,30 @@
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const settle = () => wait(450);
 
+/* A swipe, as the screen sees one: a real touch sequence inside the chapter,
+   so it travels the same path a finger does -- through the tap test, the slop
+   test, and then the direction test. Calling next() would prove nothing. */
+function swipe(dx, from) {
+  const app = window.app;
+  const frame = app.reader.frames[0];
+  const doc = app.reader.paneDoc(frame);
+  const target = doc.body;
+  const y = 400;
+  if (from === undefined) from = dx > 0 ? 80 : 300;
+
+  const touchAt = (x) => new Touch({
+    identifier: 1, target, clientX: x, clientY: y, pageX: x, pageY: y,
+  });
+  const send = (type, x) => target.dispatchEvent(new TouchEvent(type, {
+    bubbles: true, cancelable: true,
+    changedTouches: [touchAt(x)], touches: type === 'touchend' ? [] : [touchAt(x)],
+  }));
+
+  send('touchstart', from);
+  send('touchmove', from + dx / 2);
+  send('touchend', from + dx);
+}
+
 function tapAt(fraction) {
   const app = window.app;
   const frame = app.reader.frames[0];
@@ -183,6 +207,33 @@ export async function run() {
   await settle();
   const afterForward = app.reader.pageIndex;
   check('左タップで進む', afterForward > before, `${before} -> ${afterForward}`);
+
+  // -- swiping ------------------------------------------------------------
+  // A right-bound book: the next page is lifted from the left and carried
+  // rightward, so the finger travels left to right.
+  const swipeStart = app.reader.pageIndex;
+  swipe(+120);
+  await settle();
+  const afterSwipeForward = app.reader.pageIndex;
+  check('左から右へのスワイプで進む', afterSwipeForward > swipeStart,
+        `${swipeStart} -> ${afterSwipeForward}`);
+
+  swipe(-120);
+  await settle();
+  check('右から左へのスワイプで戻る', app.reader.pageIndex === swipeStart,
+        `${afterSwipeForward} -> ${app.reader.pageIndex}`);
+
+  // Between the two thresholds -- too far to be a tap, too short to be a
+  // swipe -- nothing should happen at all.
+  const beforeSmall = app.reader.pageIndex;
+  swipe(+25, 170);
+  await settle();
+  check('中途半端な指の動きでは何も起きない', app.reader.pageIndex === beforeSmall,
+        `${beforeSmall} -> ${app.reader.pageIndex}`);
+
+  // Clicks are ignored for a moment after a touch -- that is what swallows
+  // iOS's synthetic click -- so the mouse-driven checks have to wait it out.
+  await wait(1000);
 
   tapAt(0.85);
   await settle();
