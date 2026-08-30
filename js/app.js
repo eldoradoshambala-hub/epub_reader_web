@@ -10,6 +10,8 @@
 'use strict';
 
 import { Epub } from './epub.js';
+import { ImageBook, isImageName, FOREIGN_ARCHIVES, comparePaths } from './imagebook.js';
+import { ZipArchive } from './zip.js';
 import { Reader, DEFAULT_SETTINGS } from './reader.js';
 import { BookView } from './book.js';
 import { Library } from './library.js';
@@ -154,6 +156,7 @@ class App {
     }
     el('btn-shift-left').addEventListener('click', () => this.shiftSpread(-1));
     el('btn-shift-right').addEventListener('click', () => this.shiftSpread(+1));
+    el('btn-binding').addEventListener('click', () => this.toggleBinding());
 
     this.bindSeek();
 
@@ -480,36 +483,100 @@ class App {
     el('file-input').value = '';
     if (!files.length) return;
 
+    const tasks = planImport(files);
     let added = 0;
     const failed = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      busy(true, `取り込み中… ${i + 1}/${files.length}`);
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      busy(true, `取り込み中… ${i + 1}/${tasks.length}`);
       // Let the browser paint the counter before the next file blocks it.
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
-        if (!(await looksLikeEpub(file))) throw new Error('EPUB ではありません');
-        const record = await this.describe(file);
-        await this.library.add(file, record);
+        if (task.pictures) await this.addPictureSet(task);
+        else await this.addFile(task.file);
         added += 1;
       } catch (error) {
-        failed.push(`${file.name}: ${error.message || error}`);
+        failed.push(`${task.name}: ${error.message || error}`);
       }
     }
     busy(false);
     await this.renderShelf();
 
     if (failed.length) {
-      toast(`${added} 冊を追加、${failed.length} 冊は失敗`);
+      toast(`${added} 件を追加、${failed.length} 件は失敗`);
       console.warn('取り込めなかったファイル:\n' + failed.join('\n'));
     } else {
-      toast(`${added} 冊を追加しました`);
+      toast(`${added} 件を追加しました`);
     }
   }
 
+  /* One picked file. A ZIP is opened and looked into rather than judged by its
+     name: an EPUB is a ZIP too, the Kindle pipeline produces both, and reading
+     the file a second time to settle the question is a real wait on a phone. */
+  async addFile(file) {
+    const extension = (file.name.split('.').pop() || '').toLowerCase();
+    if (FOREIGN_ARCHIVES[extension]) {
+      throw new Error(`${FOREIGN_ARCHIVES[extension]} 書庫には対応していません`);
+    }
+    const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+    if (!(head[0] === 0x50 && head[1] === 0x4b)) {
+      throw new Error('EPUB でも画像 ZIP でもありません');
+    }
+
+    const zip = await ZipArchive.open(await file.arrayBuffer());
+    if (zip.has('META-INF/container.xml')) {
+      const book = await Epub.fromArchive(zip, file.name);
+      await this.library.add(file, await this.describeEpub(book, file));
+      return;
+    }
+    const book = await ImageBook.openArchive(zip, file.name, this.pictureOptions());
+    await this.library.add(file, await this.describeImages(book));
+  }
+
+  /* Pictures picked together are one volume. iOS has no folder picker, so
+     choosing several pictures at once is the nearest thing to opening a folder
+     on the desktop, and treating them as one book is what makes it useful. */
+  async addPictureSet({ pictures, name }) {
+    const files = pictures.slice().sort(
+      (a, b) => comparePaths(pathOf(a), pathOf(b))
+    );
+    const book = await ImageBook.openFiles(files, name, this.pictureOptions());
+    const total = files.reduce((sum, file) => sum + (file.size || 0), 0);
+    await this.library.add(
+      { name, size: total },
+      await this.describeImages(book),
+      { id: Library.idForSet(name, files), payload: files },
+    );
+  }
+
+  pictureOptions() {
+    return {
+      rtl: this.settings.imageBinding !== 'ltr',
+      wideAlone: this.settings.imageWideSingle !== '',
+    };
+  }
+
+  /** Enough of a picture volume to put it on the shelf. */
+  async describeImages(book) {
+    let cover = null;
+    if (book.coverHref) {
+      cover = new Blob([await book.read(book.coverHref)], { type: mimeFor(book.coverHref) });
+    }
+    return {
+      title: book.metadata.title,
+      creator: book.metadata.creator,
+      // Pictures are a picture book: manga, near enough to start with. The
+      // genre is a shelf label, not a rendering decision, and the book's own
+      // menu corrects it.
+      genre: 'manga',
+      kind: 'images',
+      rtl: book.isRtl,
+      cover,
+    };
+  }
+
   /** Read just enough of a book to put it on the shelf. */
-  async describe(file) {
-    const book = await Epub.open(file, file.name);
+  async describeEpub(book, file) {
     let cover = null;
     const href = book.coverHref && book.has(book.coverHref) ? book.coverHref : null;
     if (href) {
@@ -538,9 +605,18 @@ class App {
   async openRecord(record) {
     busy(true, '本を開いています…');
     try {
-      const file = await this.library.fileFor(record.id);
-      if (!file) throw new Error('本のデータが見つかりません');
-      const book = await Epub.open(file, record.fileName);
+      const stored = await this.library.fileFor(record.id);
+      if (!stored) throw new Error('本のデータが見つかりません');
+      const book = (record.kind === 'images')
+        ? await ImageBook.open(stored, record.title || record.fileName, {
+            // The binding chosen for this volume outranks the default: a
+            // left-bound comic should not have to be flipped every time.
+            rtl: record.rtl === undefined
+              ? this.settings.imageBinding !== 'ltr'
+              : !!record.rtl,
+            wideAlone: this.settings.imageWideSingle !== '',
+          })
+        : await Epub.open(stored, record.fileName);
       const at = (await this.library.positionFor(record.id)) || {};
       this.record = record;
       await this.applySpreadForBook();
@@ -551,6 +627,7 @@ class App {
       });
       localStorage.setItem(LAST_BOOK_KEY, record.id);
       el('book-title').textContent = book.metadata.title || record.fileName;
+      this.syncBindingButton();
       this.buildContents(book);
       closeSheet('library');
       this.flashBars();
@@ -567,7 +644,12 @@ class App {
   buildContents(book) {
     const list = el('toc-list');
     list.replaceChildren();
-    el('toc-empty').hidden = book.toc.length > 0;
+    // A picture volume's contents are its pages, and saying so is the whole
+    // difference between a useful list and one that looks broken.
+    const pictures = book instanceof ImageBook;
+    el('contents-title').textContent = pictures ? 'ページ' : '目次';
+    el('toc-empty').hidden = book.toc.length > 0 || pictures;
+    el('toc-many').hidden = !(pictures && book.toc.length === 0);
     for (const entry of book.toc) {
       const li = document.createElement('li');
       li.className = `depth-${Math.min(2, entry.depth || 0)}`;
@@ -637,9 +719,20 @@ class App {
     seek.setAttribute('aria-valuenow', String(percent));
 
     const pages = Math.max(1, state.pages);
-    el('page-count').textContent = state.fixed || state.isImagePair
-      ? `${state.page + 1}/${pages}`
-      : `${state.page + 1}/${pages}・${percent}%`;
+    // Count pages, not spreads: "12-13/210" is the number a reader can check
+    // against the file names or the paper volume, where a view number means
+    // nothing outside this screen.
+    const span = this.view.viewSpan;
+    if (span) {
+      const [first, last, total] = span;
+      el('page-count').textContent = (first === last)
+        ? `${first + 1}/${total}`
+        : `${first + 1}–${last + 1}/${total}`;
+    } else {
+      el('page-count').textContent = state.fixed || state.isImagePair
+        ? `${state.page + 1}/${pages}`
+        : `${state.page + 1}/${pages}・${percent}%`;
+    }
 
     const canShift = this.view.spreadOnScreen;
     el('btn-shift-left').disabled = !canShift;
@@ -759,6 +852,34 @@ class App {
     }
   }
 
+  /* -- binding -------------------------------------------------------------- */
+
+  /** Show the binding switch only where it means something. */
+  syncBindingButton() {
+    const button = el('btn-binding');
+    const book = this.view.book;
+    const pictures = book instanceof ImageBook;
+    button.hidden = !pictures;
+    if (!pictures) return;
+    button.textContent = book.isRtl ? '右開き' : '左開き';
+    button.setAttribute('aria-pressed', String(book.isRtl));
+  }
+
+  async toggleBinding() {
+    const book = this.view.book;
+    if (!(book instanceof ImageBook)) return;
+    const rtl = !book.isRtl;
+    await this.view.setReadingDirection(rtl);
+    this.syncBindingButton();
+    if (this.record) {
+      this.record.rtl = rtl;
+      await this.library.update(this.record.id, { rtl });
+    }
+    this.settings.imageBinding = rtl ? 'rtl' : 'ltr';
+    saveSettings(this.settings);
+    toast(rtl ? '右開き（右から左へ進みます）' : '左開き（左から右へ進みます）');
+  }
+
   /* The arrows say which way the pages move on screen, not which way the story
      runs; in a right-bound book those are opposite. */
   shiftSpread(screenDirection) {
@@ -828,6 +949,13 @@ class App {
 
     this.applyPageColours();
     this.reader.configure(this.settings);
+
+    // Whether a landscape page stands alone is decided while the pages are
+    // grouped, not while they are drawn, so changing it has to regroup them.
+    if (key === 'imageWideSingle' && this.view.book instanceof ImageBook) {
+      this.view.book.wideAlone = value !== '';
+      this.view.applySpreadMode();
+    }
   }
 
   resetSettings() {
@@ -971,9 +1099,48 @@ function formatSize(bytes) {
 /* The picker has no filter on it, so check the bytes. iOS also hands over
    files whose name has been mangled by the cloud provider, which is why the
    extension alone is not enough. */
-async function looksLikeEpub(file) {
-  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-  return head[0] === 0x50 && head[1] === 0x4b;   // "PK"
+function pathOf(file) {
+  return (file.webkitRelativePath || file.name || '').replace(/\\/g, '/');
+}
+
+/* What one selection means: every ZIP stands alone, and the pictures are
+   gathered into volumes -- by the folder they came from when the browser says
+   which, and otherwise as the single volume the reader just picked. */
+function planImport(files) {
+  const sets = new Map();
+  const tasks = [];
+  for (const file of files) {
+    if (!isImageName(file.name)) {
+      tasks.push({ file, name: file.name });
+      continue;
+    }
+    const path = pathOf(file);
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (!sets.has(folder)) sets.set(folder, []);
+    sets.get(folder).push(file);
+  }
+  for (const [folder, pictures] of sets) {
+    tasks.push({ pictures, name: nameForPictureSet(folder, pictures) });
+  }
+  return tasks;
+}
+
+/* A name for a volume that arrived as loose pictures. The folder is the right
+   answer when there is one; otherwise the part of the file names they share is
+   usually the title the scanner wrote, and the first name is the fallback. */
+function nameForPictureSet(folder, files) {
+  if (folder) return folder.split('/').pop();
+  const stems = files.map((file) => file.name.replace(/\.[^.]+$/, ''));
+  let shared = stems[0] || '';
+  for (const stem of stems.slice(1)) {
+    let at = 0;
+    while (at < shared.length && at < stem.length && shared[at] === stem[at]) at += 1;
+    shared = shared.slice(0, at);
+  }
+  shared = shared.replace(/[\s_\-.0-9]+$/, '');
+  // One shared letter is not a title; it is what `p1.jpg` and `p2.jpg` have in
+  // common. Below two characters the first file's own name says more.
+  return (shared.length >= 2 ? shared : '') || stems[0] || '画像';
 }
 
 async function fetchText(url) {

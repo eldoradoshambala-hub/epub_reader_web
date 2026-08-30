@@ -136,19 +136,35 @@ export class Library {
     return `${file.name || 'book.epub'}:${file.size}`;
   }
 
-  async add(file, meta, { folderId = null } = {}) {
-    const id = Library.idFor(file);
+  /* A volume made of separately picked pictures has no one file to name it
+     after, so it is identified by what was picked: the name it was given, how
+     many pages, and how many bytes in total. Picking the same pictures again
+     lands on the same shelf entry rather than a duplicate. */
+  static idForSet(name, files) {
+    const total = files.reduce((sum, file) => sum + (file.size || 0), 0);
+    return `set:${name}:${files.length}:${total}`;
+  }
+
+  /* `payload` is what goes into the file store: normally the file itself, but
+     a picture volume stores the array of pictures it was built from. `kind`
+     records which, since the two are opened by different code. */
+  async add(file, meta, { folderId = null, id = null, payload = null } = {}) {
+    const key = id || Library.idFor(file);
     const cover = meta.cover || null;
-    const existing = await this.get(id);
+    const existing = await this.get(key);
     const last = await this.lastOrder();
 
     const record = {
-      id,
+      id: key,
+      kind: meta.kind || 'epub',
       fileName: file.name || '',
-      size: file.size,
+      size: file.size || 0,
       title: meta.title || '',
       creator: meta.creator || '',
       genre: meta.genre || 'other',
+      // A picture book's binding is not written down anywhere, so what the
+      // reader chose for this volume is remembered with the volume.
+      rtl: existing && existing.rtl !== undefined ? existing.rtl : meta.rtl,
       folderId: existing ? existing.folderId : folderId,
       order: existing ? existing.order : last + 1,
       addedAt: existing ? existing.addedAt : Date.now(),
@@ -157,8 +173,8 @@ export class Library {
 
     const tx = this.db.transaction(['books', 'files', 'covers'], 'readwrite');
     tx.objectStore('books').put(record);
-    tx.objectStore('files').put(file, id);
-    if (cover) tx.objectStore('covers').put(cover, id);
+    tx.objectStore('files').put(payload || file, key);
+    if (cover) tx.objectStore('covers').put(cover, key);
     await this._done(tx);
     return record;
   }

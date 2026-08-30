@@ -141,7 +141,7 @@ export class BookView {
      the pictures either side of this one are fetched and decoded now, while
      nothing is waiting on them. */
   async _warmNeighbours() {
-    const wanted = [this.viewIndex + 1, this.viewIndex - 1, this.viewIndex + 2];
+    const wanted = [this.viewIndex + 1, this.viewIndex - 1];
     const urls = [];
     for (const at of wanted) {
       const group = this.views[at];
@@ -164,14 +164,26 @@ export class BookView {
 
   // -- fixed layout grouping -----------------------------------------------
 
+  /* Pair by position, setting the book's own hints aside: this is what runs
+     after the reader has nudged the spread, and at that point their eyes beat
+     whatever the file claims. A page that stands alone still does -- a scanned
+     double spread paired with its neighbour is wrong however the pairing was
+     arrived at. */
   _parityViews(offset) {
-    const count = this.book.spine.length;
+    const book = this.book;
+    const count = book.spine.length;
     const views = [];
     let index = 0;
     if (offset && count) { views.push([0]); index = 1; }
     while (index < count) {
-      if (index + 1 < count) { views.push([index, index + 1]); index += 2; }
-      else { views.push([index]); index += 1; }
+      if (index + 1 < count
+          && !book.standsAlone(index) && !book.standsAlone(index + 1)) {
+        views.push([index, index + 1]);
+        index += 2;
+      } else {
+        views.push([index]);
+        index += 1;
+      }
     }
     return views;
   }
@@ -194,12 +206,20 @@ export class BookView {
     }
     while (index < count) {
       const side = spine[index].spreadSide;
-      if (side === 'center') { views.push([index]); index += 1; continue; }
+      if (side === 'center' || this.book.standsAlone(index)) {
+        views.push([index]);
+        index += 1;
+        continue;
+      }
       if (index + 1 < count) {
         const next = spine[index + 1].spreadSide;
         const pairs = (side === lead && next && next !== lead && next !== 'center')
                    || (side === null && next === null);
-        if (pairs) { views.push([index, index + 1]); index += 2; continue; }
+        if (pairs && !this.book.standsAlone(index + 1)) {
+          views.push([index, index + 1]);
+          index += 2;
+          continue;
+        }
       }
       views.push([index]);
       index += 1;
@@ -355,6 +375,35 @@ export class BookView {
     }
     if (this.pair) await this.showSpine(this.pair[0]);
     else if (await book.isImagePage(this.spineIndex)) await this.showSpine(this.spineIndex);
+  }
+
+  /* Switch a picture book between right-bound and left-bound, live. Only a
+     picture book needs this: an EPUB states its direction in the OPF, and a
+     pile of JPEGs states nothing at all. */
+  async setReadingDirection(rtl) {
+    const book = this.book;
+    if (!book) return;
+    const wanted = rtl ? 'rtl' : 'ltr';
+    if (book.direction === wanted) return;
+    book.direction = wanted;
+    if (book.isFixedLayout) {
+      const current = this.spineIndex;
+      this.views = await this._buildViews();
+      await this._showView(this._viewContaining(current));
+    } else {
+      await this.showSpine(this.spineIndex);
+    }
+  }
+
+  /* (first page, last page, total) for the fixed-layout view on screen.
+     The seek bar counts views, but a reader counts pages -- so a spread can
+     say "12-13/210" rather than "7/105", which is the number they would
+     compare against the file names or the paper volume. */
+  get viewSpan() {
+    if (!this.book || !this.book.isFixedLayout || !this.views.length) return null;
+    const at = Math.max(0, Math.min(this.viewIndex, this.views.length - 1));
+    const group = this.views[at];
+    return [group[0], group[group.length - 1], this.book.spine.length];
   }
 
   async _onEdge(which) {

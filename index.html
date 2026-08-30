@@ -55,6 +55,10 @@
     <span class="spacer"></span>
     <button class="icon-button" id="btn-shift-left" aria-label="見開きを左へずらす">◀</button>
     <button class="icon-button" id="btn-shift-right" aria-label="見開きを右へずらす">▶</button>
+    <!-- Only a picture volume shows this: an EPUB states its binding in the
+         OPF, and a pile of JPEGs states nothing at all. -->
+    <button class="icon-button binding" id="btn-binding"
+            aria-label="綴じ方向" aria-pressed="true" hidden>右開き</button>
   </div>
   <div class="progress-row">
     <div class="seek" id="seek" role="slider" aria-label="読書位置"
@@ -90,7 +94,9 @@
   </div>
 
   <div class="body">
-    <!-- No accept filter on purpose: iOS hides files whose type it cannot
+    <!-- multiple is what stands in for "open a folder": iOS has no folder
+         picker, but several pictures chosen at once are taken as one volume.
+         No accept filter on purpose: iOS hides files whose type it cannot
          match, and an EPUB coming out of Dropbox or Synology Drive is often
          handed over as a plain octet-stream. -->
     <input type="file" id="file-input" multiple class="hidden">
@@ -150,12 +156,13 @@
 <!-- 目次 ---------------------------------------------------------------- -->
 <section class="sheet" id="contents" hidden>
   <header>
-    <h1>目次</h1>
+    <h1 id="contents-title">目次</h1>
     <button class="icon-button" id="btn-close-contents">閉じる</button>
   </header>
   <div class="body">
     <ul class="toc-list" id="toc-list"></ul>
     <p class="empty-note" id="toc-empty" hidden>この本には目次がありません。</p>
+    <p class="empty-note" id="toc-many" hidden>ページが多いため一覧は省略しています。進捗バーで移動して下さい。</p>
   </div>
 </section>
 
@@ -296,6 +303,30 @@
     </div>
 
     <p class="section-title">漫画・画像ページ</p>
+    <div class="field">
+      <label for="set-imageBinding">画像の綴じ方向</label>
+      <div class="control">
+        <select id="set-imageBinding">
+          <option value="rtl">右開き（日本の漫画）</option>
+          <option value="ltr">左開き</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="set-imageWideSingle">横長のページ</label>
+      <div class="control">
+        <select id="set-imageWideSingle">
+          <option value="on">単独で表示する</option>
+          <option value="">見開きに組み込む</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint">
+      画像フォルダや画像 ZIP は 1 枚目を表紙として単独で表示し、以降を
+      2 枚ずつ組みます。ずれた時は下のバーの ◀ ▶ で 1 枚ぶんずらせます。
+      綴じ方向はここが既定で、開いている本は下のバーの「右開き／左開き」で
+      切り替えられ、その本ごとに憶えます。
+    </p>
     <div class="field">
       <label for="set-mangaFit">表示</label>
       <div class="control">

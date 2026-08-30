@@ -131,7 +131,13 @@ export class Epub {
   }
 
   static async open(source, name) {
-    const zip = await ZipArchive.open(source);
+    return Epub.fromArchive(await ZipArchive.open(source), name);
+  }
+
+  /* For a caller that has already opened the archive -- importing looks inside
+     to decide whether a ZIP is a book or a pile of pictures, and reading the
+     whole file twice to answer that is a real wait on a phone. */
+  static async fromArchive(zip, name) {
     const book = new Epub(zip, name);
     await book._parse();
     return book;
@@ -147,6 +153,14 @@ export class Epub {
 
   indexOf(href) {
     return this.spine.findIndex((item) => item.href === href);
+  }
+
+  /* Whether a fixed-layout page refuses to be paired into a spread. Always
+     false for an EPUB: a book that cares says so with the OPF's page-spread
+     properties. A picture book has no OPF, so it answers by looking at the
+     shape of the page instead. */
+  standsAlone() {
+    return false;
   }
 
   read(href) {

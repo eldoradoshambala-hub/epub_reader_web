@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS = {
   textColor: '#1a1a1a',
   mangaFit: 'contain',
   mangaBackground: '#1c1c1c',
+  imageBinding: 'rtl',       // default binding for a picture volume
+  imageWideSingle: 'on',     // a landscape page is a scanned spread
   pageAnimation: false,      // sliding page turns; off by default on a phone
   swipeDepth: 'normal',      // how far a swipe goes before the page turns
   swipeHint: 'on',           // show the paper giving way under the finger
@@ -73,14 +75,21 @@ const SWIPE_STEPS = {
    holding them to the same speed as a deliberate drag put every gesture on
    the boundary, where it worked or did not by chance. */
 
-/* Resolves when a picture can be painted -- or after a moment, whatever
+/* The wait exists so a page turn does not flash the background while the next
+   picture decodes. Long enough to hide a decode, short enough that it can
+   never be read as the page turn itself having failed: past this the picture
+   goes up unfinished rather than leaving the old page standing while the page
+   number says otherwise. */
+const DECODE_GRACE = 250;
+
+/* Resolves when a picture can be painted -- or very shortly, whatever
    happened. A corrupt image rejects decode(), and waiting on it for ever would
    wedge the page turn that asked for it. */
 function decoded(img) {
   const ready = img.decode
     ? img.decode().catch(() => {})
     : new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
-  return Promise.race([ready, new Promise((r) => setTimeout(r, 1500))]);
+  return Promise.race([ready, new Promise((r) => setTimeout(r, DECODE_GRACE))]);
 }
 
 export class Reader {
@@ -796,7 +805,8 @@ export class Reader {
       decoded(img);
     }
     // A handful of pages either side is enough; the rest can go.
-    while (this.warmed.size > 8) {
+    // Three at most: a decoded page of manga is tens of megabytes.
+    while (this.warmed.size > 3) {
       this.warmed.delete(this.warmed.keys().next().value);
     }
   }

@@ -242,6 +242,31 @@ button {
   padding: 0 10px;
 }
 
+/* The binding switch reports a state rather than offering an action, so it
+   is filled in while it is on -- the same language the page-display segments
+   already speak. */
+.icon-button.binding {
+  white-space: nowrap;
+  padding: 0 12px;
+}
+
+.icon-button.binding[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+/* A phone in portrait has room for the page display and the binding switch,
+   but not with the padding a tablet gets. Everything on the row keeps its
+   words -- clipping "見開き" to "見開" is worse than a tighter button -- so the
+   space comes out of the padding instead. */
+@media (max-width: 480px) {
+  .bar.bottom .row { gap: 6px; }
+  .bar.bottom .segmented button { padding: 7px 9px; }
+  .bar.bottom .icon-button { min-width: 38px; padding: 0 6px; }
+  .bar.bottom .icon-button.binding { padding: 0 8px; font-size: 14px; }
+}
+
 .icon-button:active { background: color-mix(in srgb, var(--chrome-fg) 12%, transparent); }
 .icon-button[disabled] { opacity: 0.32; }
 

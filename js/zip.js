@@ -34,14 +34,24 @@ function utf8(bytes) {
 
 /* Names are UTF-8 when the entry says so, and otherwise nominally CP437.
    Real EPUBs from Japanese publishers use UTF-8 without always setting the
-   flag, so try UTF-8 strictly first and only fall back when it is not valid. */
+   flag, so try UTF-8 strictly first and only fall back when it is not valid.
+
+   The fallback tries Shift_JIS before anything else, because the archives that
+   reach this reader without the flag are the ones Windows' own compressor and
+   the older Japanese tools wrote, and those are CP932. Decoding the raw bytes
+   avoids the trap that catches the desktop reader: 0x5C, the byte a path
+   separator is written with, is also the second half of 表, so a name has to
+   be decoded before its separators are read. */
 function decodeName(bytes, utf8Flag) {
   if (utf8Flag) return utf8(bytes);
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch (err) {
-    return new TextDecoder('windows-1252').decode(bytes);
+  for (const encoding of ['utf-8', 'shift_jis']) {
+    try {
+      return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+    } catch (err) {
+      // Not that encoding; try the next.
+    }
   }
+  return new TextDecoder('windows-1252').decode(bytes);
 }
 
 async function inflateRaw(bytes) {
