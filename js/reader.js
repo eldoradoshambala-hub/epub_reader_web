@@ -306,6 +306,21 @@ export class Reader {
       const rects = range.getClientRects();
       for (let i = 0; i < rects.length; i++) push(rects[i]);
     }
+    // An annotation and the characters it reads belong on the same page, but
+    // nothing above says so: they only weld when their rectangles overlap.
+    // WebKit sets the annotation just clear of its base, so on an iPhone it
+    // passed for a line of its own and a page could break between the two,
+    // leaving the ruby at the end of the page before. One span covering both
+    // makes the weld explicit.
+    for (const rt of doc.querySelectorAll('ruby > rt')) {
+      let first = rt;
+      while (first.previousSibling && first.previousSibling.localName !== 'rt') {
+        first = first.previousSibling;
+      }
+      range.setStartBefore(first);
+      range.setEndAfter(rt);
+      push(range.getBoundingClientRect());
+    }
     for (const el of doc.querySelectorAll('img, svg, video, canvas, table, hr')) {
       push(el.getBoundingClientRect());
     }

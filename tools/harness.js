@@ -20,7 +20,7 @@ export function checkChapter() {
   const rd = window.app.reader;
   const frame = rd.frames[0];
   const doc = rd.paneDoc(frame);
-  if (!doc || !doc.body) return { pages: 0, cut: 0, lines: 0, samples: [] };
+  if (!doc || !doc.body) return { pages: 0, cut: 0, strayRuby: 0, lines: 0, samples: [] };
 
   // Measure once with the page offset removed; re-measuring per page turns the
   // sweep quadratic and tells you nothing extra.
@@ -30,6 +30,7 @@ export function checkChapter() {
   void doc.body.offsetWidth;
 
   const rects = [];
+  const samples = [];
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   const range = doc.createRange();
   let node;
@@ -41,12 +42,36 @@ export function checkChapter() {
       rects.push([rect.left, rect.right, node.nodeValue.trim().slice(0, 10)]);
     }
   }
+
+  // A ruby can sit wholly inside a page and still be on the wrong one: the
+  // annotation left at the end of the page before its base. Nothing above is
+  // cut, so it has to be asked for separately.
+  let strayRuby = 0;
+  if (rd.vertical) {
+    const origin = doc.body.getBoundingClientRect().right;
+    const middle = (nodes) => {
+      range.setStartBefore(nodes[0]);
+      range.setEndAfter(nodes[nodes.length - 1]);
+      const box = range.getBoundingClientRect();
+      return origin - (box.left + box.right) / 2;
+    };
+    for (const rt of doc.querySelectorAll('ruby > rt')) {
+      const base = [];
+      for (let n = rt.previousSibling; n && n.localName !== 'rt'; n = n.previousSibling) {
+        base.unshift(n);
+      }
+      if (!base.length) continue;
+      if (rd.pageForDistance(middle(base)) !== rd.pageForDistance(middle([rt]))) {
+        strayRuby += 1;
+        if (samples.length < 3) samples.push({ strayRuby: rt.parentNode.textContent });
+      }
+    }
+  }
   doc.body.style.transform = saved;
   void doc.body.offsetWidth;
   doc.body.style.transition = '';
 
   const width = frame.clientWidth;
-  const samples = [];
   let cut = 0;
   for (let page = 0; page < rd.pageCount; page++) {
     const start = rd.pageOffsets[page] || 0;
@@ -71,7 +96,7 @@ export function checkChapter() {
     }
     if (bad) cut += 1;
   }
-  return { pages: rd.pageCount, cut, lines: rects.length, samples };
+  return { pages: rd.pageCount, cut, strayRuby, lines: rects.length, samples };
 }
 
 /** Every internal link in the book, resolved the way the reader resolves it. */
@@ -122,7 +147,7 @@ export async function sweepBook(recordId, samples = 6) {
   const view = app.view;
   const count = view.book.spine.length;
   const step = Math.max(1, Math.floor(count / samples));
-  let pages = 0, cut = 0, chapters = 0, images = 0;
+  let pages = 0, cut = 0, strayRuby = 0, chapters = 0, images = 0;
   const cutSamples = [];
   for (let i = 0; i < count; i += step) {
     await view.showSpine(i);
@@ -132,12 +157,13 @@ export async function sweepBook(recordId, samples = 6) {
     chapters += 1;
     pages += result.pages;
     cut += result.cut;
+    strayRuby += result.strayRuby;
     if (result.samples.length && cutSamples.length < 3) {
       cutSamples.push(Object.assign({ spine: i }, result.samples[0]));
     }
   }
   return {
-    title: record.title, spine: count, chapters, pages, cut, images,
+    title: record.title, spine: count, chapters, pages, cut, strayRuby, images,
     links: links.total, broken: links.broken.length,
     brokenSample: links.broken.slice(0, 3),
     toc: view.book.toc.length, fixed: view.book.isFixedLayout,
@@ -175,6 +201,7 @@ export function summarise(results) {
     chapters: sum('chapters'),
     pages: sum('pages'),
     cut: sum('cut'),
+    strayRuby: sum('strayRuby'),
     links: sum('links'),
     broken: sum('broken'),
     noToc: results.filter((r) => !r.toc && !r.fixed).length,
