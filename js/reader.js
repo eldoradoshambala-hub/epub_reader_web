@@ -33,6 +33,31 @@ export const DEFAULT_SETTINGS = {
 };
 
 const XHTML_NS = 'http://www.w3.org/1999/xhtml';
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
+
+/* The picture a touch landed on, if it landed on one. An illustration page is
+   as often an <svg> wrapping a single <image> as it is an <img>, and a finger
+   on the margin of that svg lands on the svg itself. */
+function pictureAt(node) {
+  if (!node || node.nodeType !== 1 || !node.closest) return null;
+  const hit = node.closest('img, image');
+  if (hit) return hit;
+  const svg = node.closest('svg');
+  if (svg) {
+    const images = svg.querySelectorAll('image');
+    if (images.length === 1) return images[0];
+  }
+  return null;
+}
+
+function pictureSource(picture) {
+  if ((picture.localName || '').toLowerCase() === 'img') {
+    return picture.currentSrc || picture.src || picture.getAttribute('src') || '';
+  }
+  return (picture.href && picture.href.baseVal)
+    || picture.getAttributeNS(XLINK_NS, 'href')
+    || picture.getAttribute('href') || '';
+}
 
 // Chapters with more text nodes than this fall back to the coarse grid, to
 // keep one enormous single-file chapter from stalling the interface.
@@ -111,6 +136,9 @@ export class Reader {
     this.onEdge = options.onEdge || (() => {});
     this.onLink = options.onLink || (() => {});
     this.onTapMiddle = options.onTapMiddle || (() => {});
+    // Two fingers on a picture. Given {src, rect, points}; returns a handle
+    // the rest of the pinch is passed on through, or nothing to ignore it.
+    this.onPinchPicture = options.onPinchPicture || (() => null);
 
     this.mode = 'reflow';
     this.vertical = true;
@@ -957,13 +985,71 @@ export class Reader {
     return SWIPE_STEPS[depth || this.settings.swipeDepth] || SWIPE_STEPS.normal;
   }
 
+  /* Touch points in the shell's coordinates. A chapter's touches are measured
+     from its own pane, which sits somewhere inside the shell. */
+  _shellPoints(touches, paneEl) {
+    const offset = paneEl ? paneEl.getBoundingClientRect() : { left: 0, top: 0 };
+    return Array.from(touches).slice(0, 2)
+      .map((t) => ({ x: t.clientX + offset.left, y: t.clientY + offset.top }));
+  }
+
+  /* What a two-finger touch is on, if it is on a picture: the picture's
+     address, where it sits on screen, and where the fingers are. */
+  _pictureUnder(e, paneEl) {
+    const touches = Array.from(e.touches).slice(0, 2);
+    if (touches.length < 2) return null;
+    const doc = paneEl ? this.paneDoc(paneEl) : document;
+    const candidates = [];
+    if (doc && doc.elementFromPoint) {
+      candidates.push(doc.elementFromPoint(
+        (touches[0].clientX + touches[1].clientX) / 2,
+        (touches[0].clientY + touches[1].clientY) / 2,
+      ));
+    }
+    for (const touch of touches) candidates.push(touch.target);
+
+    const offset = paneEl ? paneEl.getBoundingClientRect() : { left: 0, top: 0 };
+    for (const node of candidates) {
+      const picture = pictureAt(node);
+      const src = picture && pictureSource(picture);
+      if (!src) continue;
+      const box = picture.getBoundingClientRect();
+      return {
+        src,
+        rect: {
+          left: box.left + offset.left, top: box.top + offset.top,
+          width: box.width, height: box.height,
+        },
+        points: this._shellPoints(touches, paneEl),
+      };
+    }
+    return null;
+  }
+
   _attachTouch(target, paneEl) {
     let startX = 0;
     let startY = 0;
     let startAt = 0;
     let moved = false;
+    // A second finger makes the touch a pinch, which is never a tap or a page
+    // turn. On a picture it opens the picture to look at closely, and the
+    // rest of the pinch -- still arriving here, where the fingers went down
+    // -- is handed on to zoom it.
+    let pinching = false;
+    let zoom = null;
 
     target.addEventListener('touchstart', (e) => {
+      if (e.touches.length > 1) {
+        pinching = true;
+        this._clearTurn();
+        if (!zoom) {
+          const picture = this._pictureUnder(e, paneEl);
+          if (picture) zoom = this.onPinchPicture(picture) || null;
+        }
+        return;
+      }
+      pinching = false;
+      zoom = null;
       const touch = e.changedTouches[0];
       startX = touch.clientX;
       startY = touch.clientY;
@@ -971,7 +1057,14 @@ export class Reader {
       moved = false;
     }, { passive: true });
 
+    // Not passive: a pinch has to be kept from zooming the whole application,
+    // which is what Safari does with two fingers if nobody says otherwise.
     target.addEventListener('touchmove', (e) => {
+      if (pinching) {
+        e.preventDefault();
+        if (zoom && e.touches.length >= 2) zoom.move(this._shellPoints(e.touches, paneEl));
+        return;
+      }
       const touch = e.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;
@@ -980,15 +1073,31 @@ export class Reader {
       // a page and should not make the paper look as though it is.
       if (moved && Math.abs(dx) > Math.abs(dy)) this._trackTurn(dx);
       else this._clearTurn();
-    }, { passive: true });
+    }, { passive: false });
 
-    target.addEventListener('touchcancel', () => this._clearTurn(), { passive: true });
+    // The pinch is over once the last finger is off the glass, not the first.
+    const endPinch = (e) => {
+      if (e.touches.length > 0) return;
+      if (zoom) zoom.end();
+      zoom = null;
+      pinching = false;
+    };
+
+    target.addEventListener('touchcancel', (e) => {
+      this._clearTurn();
+      if (pinching) endPinch(e);
+    }, { passive: true });
 
     target.addEventListener('touchend', (e) => {
       // iOS sends a click of its own after a tap. Both would be handled, and
       // the second undoes the first -- which is what made the bars flash and
       // vanish, and made the result depend on how long the tap lasted.
       this.lastTouchAt = Date.now();
+      if (pinching) {
+        this._clearTurn();
+        endPinch(e);
+        return;
+      }
       const touch = e.changedTouches[0];
       const dx = touch.clientX - startX;
       const dy = touch.clientY - startY;

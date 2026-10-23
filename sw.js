@@ -13,7 +13,7 @@
 // Bumped on every release. The name is what forces the update: a shell cached
 // under the old name is dropped wholesale when this worker activates, so the
 // next launch gets the new files rather than the ones already on the phone.
-const CACHE = 'reader-shell-v14';
+const CACHE = 'reader-shell-v15';
 
 const SHELL = [
   './',
@@ -28,6 +28,7 @@ const SHELL = [
   'js/library.js',
   'js/reader.js',
   'js/resources.js',
+  'js/zoom.js',
   'js/zip.js',
   'icons/icon-180.png',
   'icons/icon-192.png',

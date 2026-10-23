@@ -16,6 +16,7 @@ import { Reader, DEFAULT_SETTINGS } from './reader.js';
 import { BookView } from './book.js';
 import { Library } from './library.js';
 import { mimeFor } from './resources.js';
+import { PictureZoom } from './zoom.js';
 
 const VERSION = '1.0.0';
 const SETTINGS_KEY = 'reader.settings';
@@ -98,9 +99,14 @@ class App {
     this.saveTimer = 0;
     this.barsTimer = 0;
 
+    this.zoom = new PictureZoom(el('zoom'));
     this.reader = new Reader(el('reader'), {
       baseCss,
       onTapMiddle: () => this.toggleBars(),
+      onPinchPicture: (picture) => {
+        this.toggleBars(false);
+        return this.zoom.show(picture);
+      },
     });
     this.view = new BookView(this.reader, {
       onPosition: (state) => this.onPosition(state),
@@ -602,6 +608,17 @@ class App {
 
   /* -- opening ------------------------------------------------------------ */
 
+  /* Open the book that was being read when the app was last used, at the
+     page it was left on. False when there is none to open, or it would not
+     open, so the caller can show the shelf instead. */
+  async resumeLastBook() {
+    const id = localStorage.getItem(LAST_BOOK_KEY);
+    if (!id) return false;
+    const record = (await this.library.list()).find((b) => b.id === id);
+    if (!record) return false;
+    return this.openRecord(record);
+  }
+
   async openRecord(record) {
     busy(true, '本を開いています…');
     try {
@@ -631,9 +648,11 @@ class App {
       this.buildContents(book);
       closeSheet('library');
       this.flashBars();
+      return true;
     } catch (error) {
       console.error(error);
       toast(`開けませんでした: ${error.message || error}`);
+      return false;
     } finally {
       busy(false);
     }
@@ -1169,9 +1188,10 @@ async function boot() {
     app.showBackgroundImage(await library.getValue('background-image'));
     await app.refreshStorageNote();
 
-    // The shelf is the home screen; the book you were reading is one tap away
-    // on the 「続きから」 card rather than something the app decides for you.
-    await app.showLibrary();
+    // Starting the app carries on where reading stopped: the last book, at
+    // the page it was left on. The shelf is one tap away on the top bar, and
+    // is the first screen only when there is nothing to carry on with.
+    if (!(await app.resumeLastBook())) await app.showLibrary();
 
     // Asking for persistence stops iOS reclaiming the shelf when storage runs
     // low. It is granted silently for an installed web app.

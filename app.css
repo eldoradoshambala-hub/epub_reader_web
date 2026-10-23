@@ -628,6 +628,55 @@ button {
   color: var(--chrome-dim);
 }
 
+/* -- a picture, looked at closely ----------------------------------------- */
+
+/* Over the bars and the sheets: a picture opened here is the only thing being
+   looked at until it is put back. */
+#zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  touch-action: none;
+  background: rgba(8, 8, 10, 0);
+  transition: background-color 0.18s ease;
+}
+
+#zoom[hidden] { display: none; }
+#zoom.shown { background: rgba(8, 8, 10, 0.94); }
+
+/* Laid out at its own pixel size and scaled down, not the other way round,
+   so zooming in shows the detail the file has rather than an enlargement of
+   the screen-sized copy. */
+#zoom img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+#zoom img.settling { transition: transform 0.2s ease; }
+
+#zoom .zoom-close {
+  position: absolute;
+  top: calc(var(--safe-top) + 10px);
+  right: calc(var(--safe-right) + 12px);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(40, 40, 44, 0.72);
+  color: #fff;
+  font-size: 17px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+#zoom.shown .zoom-close { opacity: 1; }
+
 /* -- toast ---------------------------------------------------------------- */
 
 #toast {
