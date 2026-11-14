@@ -230,7 +230,74 @@ export class Reader {
       + `--rd-letter-spacing:${Number(this.settings.letterSpacing) || 0}em;`
       + `--rd-page-w:${Math.round(this.pageW)}px;`
       + `--rd-page-h:${Math.round(this.pageH)}px;`
+      + Reader.emphasisVars(this.settings.textColor)
       + '}';
+  }
+
+  /* The emphasis marks, as pictures reader.css paints beside the text.
+
+     One picture is the cell of one character -- half an em across the line,
+     a whole em along it -- with the mark in the middle, so repeating it puts
+     a mark on every character. A picture cannot take the text colour by
+     itself, so the colour is written into it. */
+  static emphasisVars(color) {
+    const ink = String(color || '#1a1a1a').replace(/'/g, '');
+    const shapes = {
+      sesame: (x, y) => `<path fill='${ink}' transform='translate(${x - 25} ${y - 50})' `
+        + "d='M11 34C23 37 37 50 39 63C39 68 34 68 30 63C24 54 16 44 11 34Z'/>",
+      dot: (x, y) => `<circle fill='${ink}' cx='${x}' cy='${y}' r='11'/>`,
+      open: (x, y) => `<circle fill='none' stroke='${ink}' stroke-width='5' cx='${x}' cy='${y}' r='12'/>`,
+    };
+    let vars = '';
+    for (const name of Object.keys(shapes)) {
+      for (const [axis, w, h] of [['v', 50, 100], ['h', 100, 50]]) {
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}'>`
+          + `${shapes[name](w / 2, h / 2)}</svg>`;
+        vars += `--rd-emph-${name}-${axis}:url("data:image/svg+xml,${encodeURIComponent(svg)}");`;
+      }
+    }
+    return vars;
+  }
+
+  /* Find the runs of text the book sets emphasis marks on, once per document,
+     and hand them to reader.css to draw (see `.rd-emph` there for why).
+
+     Looked up through the stylesheets rather than by asking every element for
+     its computed style: a chapter can hold thousands of spans and only a
+     handful of rules. */
+  tagEmphasis(doc) {
+    if (doc.__rdEmphasis) return;
+    doc.__rdEmphasis = true;
+    const win = doc.defaultView;
+    if (!win) return;
+
+    const selectors = ['[style*="text-emphasis"]'];
+    const collect = (rules) => {
+      for (const rule of rules) {
+        if (rule.cssRules) collect(rule.cssRules);
+        if (rule.selectorText && rule.style && /text-emphasis/.test(rule.style.cssText)) {
+          selectors.push(rule.selectorText);
+        }
+      }
+    };
+    for (const sheet of doc.styleSheets) {
+      // A stylesheet from elsewhere will not show its rules.
+      try { collect(sheet.cssRules); } catch { /* skip it */ }
+    }
+
+    for (const selector of selectors) {
+      let found;
+      try { found = doc.querySelectorAll(selector); } catch { continue; }
+      for (const el of found) {
+        const style = win.getComputedStyle(el);
+        const marks = style.textEmphasisStyle || style.webkitTextEmphasisStyle || '';
+        if (!marks || marks === 'none' || style.display !== 'inline') continue;
+        el.setAttribute('data-rd-emph', /open/.test(marks) ? 'open'
+          : /sesame/.test(marks) ? 'sesame'
+          : /dot|circle|triangle/.test(marks) ? 'dot' : 'auto');
+        el.classList.add('rd-emph');
+      }
+    }
   }
 
   // -- geometry -----------------------------------------------------------
@@ -539,6 +606,7 @@ export class Reader {
     if (base.textContent !== this.baseCss) base.textContent = this.baseCss;
     const vars = doc.getElementById('__rd_vars__') || makeStyle('__rd_vars__');
     vars.textContent = this.buildVars();
+    try { this.tagEmphasis(doc); } catch { /* the engine's own marks stay */ }
 
     doc.documentElement.classList.toggle('rd-v', this.vertical);
     doc.documentElement.classList.toggle('rd-h', !this.vertical);

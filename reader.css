@@ -191,6 +191,38 @@ rp { display: none !important; }
   text-emphasis-position: over right;
 }
 
+/* Emphasis marks set by the engine widen the line they are on, for the same
+   reason ruby does, and there is nothing on a mark to take the width back
+   with. So reader.js finds every run that carries them (tagEmphasis) and the
+   marks are drawn here instead: a strip of padding beside the run, which an
+   inline box may have without its line growing, with one mark painted per
+   character. The pictures are built by reader.js in the text colour. */
+.rd-emph {
+  text-emphasis: none !important;
+  -webkit-text-emphasis: none !important;
+  padding-block-start: 0.5em !important;
+  background-color: transparent !important;
+}
+
+html.rd-v .rd-emph {
+  background-image: var(--rd-emph-sesame-v) !important;
+  background-size: 0.5em calc(1em + var(--rd-letter-spacing)) !important;
+  background-position: right top !important;
+  background-repeat: repeat-y !important;
+}
+html.rd-v .rd-emph[data-rd-emph="dot"] { background-image: var(--rd-emph-dot-v) !important; }
+html.rd-v .rd-emph[data-rd-emph="open"] { background-image: var(--rd-emph-open-v) !important; }
+
+/* Across the page the usual mark is a dot, not a sesame. */
+html.rd-h .rd-emph {
+  background-image: var(--rd-emph-dot-h) !important;
+  background-size: calc(1em + var(--rd-letter-spacing)) 0.5em !important;
+  background-position: left top !important;
+  background-repeat: repeat-x !important;
+}
+html.rd-h .rd-emph[data-rd-emph="sesame"] { background-image: var(--rd-emph-sesame-h) !important; }
+html.rd-h .rd-emph[data-rd-emph="open"] { background-image: var(--rd-emph-open-h) !important; }
+
 /* -- media --------------------------------------------------------------- */
 
 img, svg, video, canvas {
