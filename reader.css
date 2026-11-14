@@ -163,6 +163,18 @@ rt {
   letter-spacing: 0 !important;
   -webkit-text-stroke: 0 !important;
   text-emphasis: none;
+  /* Without these a line with ruby on it comes out wider than its neighbours:
+     the annotation does not fit between two lines, so the line is widened to
+     hold it. The first margin stops the annotation counting towards the line,
+     the second moves it towards its characters by whatever room is still
+     missing. Both are measured by reader.js (fitRuby) and are 0 until then. */
+  margin-block-start: calc(-1 * var(--rd-rt-pull, 0px)) !important;
+  margin-block-end: calc(-1 * var(--rd-rt-lean, 0px)) !important;
+}
+
+/* A heading's line is two advances wide: its ruby has the room already. */
+h1 rt, h2 rt, h3 rt, h4 rt, h5 rt, h6 rt {
+  margin-block-end: 0 !important;
 }
 
 rp { display: none !important; }

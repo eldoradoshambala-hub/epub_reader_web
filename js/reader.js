@@ -549,6 +549,132 @@ export class Reader {
     for (const el of this.panes()) this.injectStyles(this.paneDoc(el));
   }
 
+  // -- ruby and the line advance --------------------------------------------
+
+  /* Keep a line with ruby on it the same width as every other line.
+
+     An annotation is set in the space between two lines. When it is larger
+     than that space the engine widens the line to make room, so the columns
+     of a page came out unevenly spaced wherever a reading was given. Two
+     margins on the annotation undo that (see reader.css): `pull` stops it
+     counting towards the line at all, and `lean` moves it towards the
+     characters it reads by whatever is still missing.
+
+     How much of each is needed depends on the engine and on the font's own
+     metrics, neither of which can be read from here, so it is measured: two
+     lines are set out of sight, one plain and one with ruby, and compared. A
+     setting is kept only if the measurement says it worked, which leaves an
+     engine that answers differently exactly as it was. */
+  fitRuby() {
+    const lead = this.paneDoc(this.frames[0]);
+    if (!lead || !lead.body) return;
+    let fit = { pull: 0, lean: 0 };
+    try {
+      fit = this.measureRubyFit(lead);
+    } catch { /* leave the annotations as the engine set them */ }
+    this.rubyFit = fit;
+    for (const el of this.panes()) {
+      const doc = this.paneDoc(el);
+      if (!doc || !doc.documentElement || !doc.documentElement.style) continue;
+      doc.documentElement.style.setProperty('--rd-rt-pull', `${fit.pull}px`);
+      doc.documentElement.style.setProperty('--rd-rt-lean', `${fit.lean}px`);
+    }
+  }
+
+  measureRubyFit(doc) {
+    const none = { pull: 0, lean: 0 };
+    if (!doc.querySelector('ruby > rt')) return none;
+
+    const key = [
+      this.vertical, this.advance, this.settings.fontSize, this.fontStack(),
+      this.settings.fontWeight, this.settings.letterSpacing,
+    ].join('|');
+    if (doc.__rdRubyKey === key && doc.__rdRubyFit) return doc.__rdRubyFit;
+
+    const make = (name, parent, text) => {
+      const el = doc.createElementNS(XHTML_NS, name);
+      if (text) el.textContent = text;
+      parent.appendChild(el);
+      return el;
+    };
+    // Out of flow, so that setting it changes nothing about the chapter.
+    const probe = doc.createElementNS(XHTML_NS, 'div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;'
+      + 'inset-block-start:0;inset-inline-start:0;inline-size:12em;margin:0;padding:0;border:0;';
+    const plainLine = make('p', probe);
+    const plainText = make('span', plainLine, '漢字');
+    const rubyLine = make('p', probe);
+    const ruby = make('ruby', rubyLine);
+    const base = make('span', ruby, '漢');
+    const rt = make('rt', ruby, 'かん');
+    rubyLine.appendChild(doc.createTextNode('字'));
+    doc.body.appendChild(probe);
+
+    // Along the direction lines stack in: [where the box starts, where it ends].
+    const span = (el) => {
+      const box = el.getBoundingClientRect();
+      return this.vertical ? [-box.right, -box.left] : [box.top, box.bottom];
+    };
+    const measure = (pull, lean) => {
+      probe.style.setProperty('--rd-rt-pull', `${pull}px`);
+      probe.style.setProperty('--rd-rt-lean', `${lean}px`);
+      const plain = span(plainLine);
+      const line = span(rubyLine);
+      const note = span(rt);
+      return {
+        growth: (line[1] - line[0]) - (plain[1] - plain[0]),
+        // Clear space between the annotation and its characters.
+        gap: span(base)[0] - note[1],
+        // How far the annotation reaches into the text of the line before.
+        crossing: span(plainText)[1] - note[0],
+        size: note[1] - note[0],
+      };
+    };
+
+    let fit = none;
+    try {
+      const before = measure(0, 0);
+      if (before.growth > 0.25 && before.size > 0) {
+        // Leaning further than this would set the reading on top of the text.
+        const cap = before.size * 0.6;
+        const solve = (pull) => {
+          let lean = 0;
+          let now = measure(pull, 0);
+          for (let i = 0; i < 4; i++) {
+            const need = Math.max(now.growth, pull ? now.crossing : 0);
+            if (need < 0.1 || lean >= cap) break;
+            lean = Math.min(cap, lean + need);
+            now = measure(pull, lean);
+          }
+          return { pull, lean, now };
+        };
+
+        // Pulling is the better half -- it moves nothing -- but only where the
+        // engine really does leave the annotation where it was.
+        let pull = before.size * 2;
+        const pulled = measure(pull, 0);
+        if (!(pulled.growth < before.growth - 0.1 && pulled.gap > before.gap - 0.5)) pull = 0;
+
+        let result = solve(pull);
+        // An annotation left reaching into the line before it welds the two
+        // lines together when pages are broken. Better a line that widens.
+        if (pull && result.now.crossing > 0.1) result = solve(0);
+        if (result.now.growth < before.growth - 0.1) {
+          fit = {
+            pull: Math.round(result.pull * 100) / 100,
+            lean: Math.round(result.lean * 100) / 100,
+          };
+        }
+      }
+    } finally {
+      probe.remove();
+    }
+    doc.__rdRubyKey = key;
+    doc.__rdRubyFit = fit;
+    return fit;
+  }
+
   // -- loading ------------------------------------------------------------
 
   static imagesReady(doc) {
@@ -723,6 +849,7 @@ export class Reader {
     if (!doc || !doc.body) { this.pageCount = 1; this.pageIndex = 0; return; }
 
     this.injectAll();
+    this.fitRuby();
     this.pageOffsets = this.computePages(doc);
     this.pageCount = this.pageOffsets.length;
 
